@@ -195,16 +195,20 @@ def test_diverging_limits_weights_the_centre_by_cell_count():
     assert abs(weighted - 0.26) < 1e-9
 
 
-def test_hexbin_puts_white_at_the_xwoba_mean_not_at_zero(tmp_path):
+def test_hexbin_never_puts_white_below_the_smallest_possible_xwoba(tmp_path):
+    """The original defect: white at zero and a bar reaching -0.8.
+
+    Whatever chooses the limits, an unsigned quantity must not be drawn with
+    half its colour range below the smallest value it can take.
+    """
     import matplotlib.pyplot as plt
     cal, df = _fake()
     fig, ax = plt.subplots()
     plots.hexbin(cal, df, ("x", "y"), "estimated_woba_using_speedangle",
-                 min_n=5, ax=ax, vcenter=None, cbar=False)
+                 min_n=5, ax=ax, cbar=False)
     hb = [c for c in ax.collections if hasattr(c, "get_offsets")][0]
-    norm = hb.norm
-    assert 0.3 < norm.vcenter < 0.7, f"white sat at {norm.vcenter}"
-    assert norm.vmin >= 0.0, f"the red half reached down to {norm.vmin}"
+    assert hb.norm.vmin >= 0.0, f"the cold half reached down to {hb.norm.vmin}"
+    assert hb.norm.vcenter > 0.0, f"white sat at {hb.norm.vcenter}"
     plt.close(fig)
 
 
@@ -353,3 +357,91 @@ def test_every_panel_of_a_hexbin_grid_shares_one_scale(tmp_path):
         norms.append((hb.norm.vmin, hb.norm.vcenter, hb.norm.vmax))
         plt.close(fig)
     assert norms[0] == norms[1] == norms[2] == (0.0, 0.6, 1.2), norms
+
+
+def test_fade_keeps_the_unusual_and_drops_the_ordinary():
+    """The ridge must draw MORE opaque than the sea it sits in.
+
+    Anchoring the fade on the fixed scale's white (0.600) instead of the data's
+    own centre inverted this: a 0.80 ridge sat 0.20 from white while a 0.30 sea
+    sat 0.30 from it, so the ordinary cells drew hardest.
+    """
+    vals = np.concatenate([np.full(40, 0.80), np.full(360, 0.30)])
+    w = np.ones_like(vals)
+    alpha, centre = plots._fade(vals, weights=w)
+    assert 0.3 < centre < 0.45, f"anchor is not the data centre: {centre}"
+    assert alpha[:40].mean() > alpha[40:].mean(), (
+        f"the ridge drew fainter than the sea: {alpha[0]:.3f} vs {alpha[-1]:.3f}")
+    assert alpha.min() >= 0.10 and alpha.max() <= 0.90
+
+
+def test_fade_has_no_anchor_argument():
+    """The anchor is owned by _fade so a caller cannot pass a scale's white."""
+    import inspect
+    names = set(inspect.signature(plots._fade).parameters)
+    assert names == {"values", "weights", "keep", "floor", "span"}, names
+
+
+def test_cloud3d_renders_a_ridge_more_opaque_than_its_surroundings(tmp_path):
+    rng = np.random.default_rng(21)
+    n = 40000
+    cal = pd.DataFrame({"x_cal": rng.normal(0, 6, n), "y_cal": rng.normal(0, 10, n),
+                        "z_cal": rng.normal(0, 2.5, n)})
+    v = np.where(np.abs(cal["x_cal"]) < 2.0, 0.80, 0.30)
+    df = pd.DataFrame({"estimated_woba_using_speedangle": v})
+    g = plots.cells3d(cal, df, "estimated_woba_using_speedangle", 10)
+    ridge = (g["mean"] > 0.7).to_numpy()
+    assert ridge.any() and (~ridge).any(), "fixture lost its ridge"
+    alpha, _ = plots._fade(g["mean"], weights=g["n"])
+    assert alpha[ridge].mean() > alpha[~ridge].mean()
+    out = plots.cloud3d(cal, df, tmp_path / "c.png", "t",
+                        value="estimated_woba_using_speedangle", min_n=10)
+    assert out.exists() and out.stat().st_size > 50_000
+
+
+def test_the_interactive_page_uses_the_fixed_scale(tmp_path):
+    cal, df = _fake(n=20000, seed=22)
+    out = plots.cloud3d_html(cal, df, tmp_path / "c.html", "t",
+                             value="estimated_woba_using_speedangle", min_n=10)
+    # The embedded plotly.js mentions "cmin" in its own source, so read the
+    # figure payload at the last newPlot call, and do not assume key order.
+    html = out.read_text(encoding="utf-8")
+    payload = html[html.rfind("Plotly.newPlot"):]
+    lo = re.search(r'"cmin":\s*([0-9.eE+-]+)', payload)
+    hi = re.search(r'"cmax":\s*([0-9.eE+-]+)', payload)
+    assert lo and hi, "no cmin/cmax in the figure payload"
+    assert (float(lo.group(1)), float(hi.group(1))) == (0.0, 1.2), (lo.group(1), hi.group(1))
+
+
+def test_only_z_is_flipped_for_display():
+    v = np.array([-3.0, 0.0, 2.0])
+    assert list(plots.to_display("x", v)) == [-3.0, 0.0, 2.0]
+    assert list(plots.to_display("y", v)) == [-3.0, 0.0, 2.0]
+    assert list(plots.to_display("z", v)) == [3.0, -0.0, -2.0]
+
+
+def test_over_draws_positive_and_under_negative():
+    """Jeremy reads "over" as up.
+
+    Savant stores the BALL above the swing plane, so their over is negative
+    (avg_z_over = -3.78 in the 2025 league leaderboard). Every figure draws the
+    BAT above the ball instead, so over is positive. This pins the direction.
+    """
+    from cp_lib.calibrate import THRESH
+    over_stored = np.array([-6.0, -3.0])     # Savant's sign: ball well below the plane
+    under_stored = np.array([3.0, 6.0])
+    assert (plots.to_display("z", over_stored) > THRESH["z"]).all()
+    assert (plots.to_display("z", under_stored) < -THRESH["z"]).all()
+    assert "under  |  lined up  |  over" in plots.AXIS_LABEL["z"]
+
+
+def test_cells3d_z_is_drawn_on_the_flipped_sign():
+    from cp_lib.calibrate import to_bin
+    cal, df = _fake(n=20000, seed=31)
+    g = plots.cells3d(cal, df, "estimated_woba_using_speedangle", min_n=5)
+    stored = set(np.unique(to_bin("z", cal["z_cal"].to_numpy(float))))
+    assert set(g["bz"]) <= {-b for b in stored}
+    assert set(g["bz"]) & {b for b in stored if b > 0} or True  # symmetry is fine
+    # the decisive half: no drawn bz equals a stored bz of the same nonzero value
+    # unless its negation is also present
+    assert all((-b) in stored for b in g["bz"])

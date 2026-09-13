@@ -20,6 +20,17 @@ Every figure draws expected wOBA on one fixed scale, 0 to 1.2 with white at
 A scale fitted to each panel's own data makes a quiet panel and a violent one
 look alike, and nothing carries from one figure to the next.
 
+The z axis is drawn as the BAT's height above the ball, so "over" is positive.
+Savant stores the opposite sign, the ball's height above the swing plane: their
+2025 leaderboard publishes avg_z_over = -3.78 and avg_z_under = +2.99, and every
+one of their 11,476 per-swing rows labelled Over carries a negative value under
+both batter hands. The flip is applied when drawing only; every comparison
+against Savant stays on Savant's sign.
+
+x needs no such flip. Tied up is negative for all 1,826 of Savant's own tail
+rows under both hands, because it measures handle against tip along the bat and
+does not care which side of the plate the batter stands on.
+
 Only one of the three z bands pays. A swing more than 2 inches off its own
 plane almost never puts the ball in play: 1.4% of "over" swings and 3.4% of
 "under" ones do, against 59% of lined-up swings. Run value per swing follows,

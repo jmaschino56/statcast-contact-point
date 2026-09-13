@@ -22,8 +22,24 @@ from .calibrate import BINS, to_bin  # noqa: E402
 AXIS_LABEL = {
     "x": "along the bat (in): tied up  |  centered  |  flail",
     "y": "timing (ms): late  |  on time  |  early",
-    "z": "above the swing plane (in): over  |  lined up  |  under",
+    # Every figure draws z as the BAT's height above the ball, so "over" is
+    # positive, which is the way round Jeremy reads it. Savant's stored field
+    # is the opposite sign: it is the BALL's height above the swing plane, and
+    # their own leaderboard publishes avg_z_over = -3.78, avg_z_under = +2.99.
+    # See DISPLAY_SIGN.
+    "z": "bat above the ball (in): under  |  lined up  |  over",
 }
+
+# Applied at the drawing boundary only. Everything upstream -- reconstruction,
+# calibration, and every comparison against Savant -- stays on Savant's own
+# sign, so a tail row's raw delta never has to be negated to be checked. Both
+# thresholds are symmetric, so nothing else moves.
+DISPLAY_SIGN = {"x": 1.0, "y": 1.0, "z": -1.0}
+
+
+def to_display(axis: str, values):
+    """Savant's stored sign turned into the sign the figures are drawn in."""
+    return np.asarray(values, float) * DISPLAY_SIGN[axis]
 THRESH = {"x": 4.0, "y": 7.0, "z": 2.0}
 NEG, MID, POS = "#b2182b", "#efefee", "#2166ac"
 # Savant's polarity: cold blue at the bottom of the scale, hot red at the top.
@@ -55,8 +71,8 @@ def _dress(ax):
 
 def _grid(cal, df, axes, value, min_n):
     a, b = axes
-    t = pd.DataFrame({"ba": to_bin(a, cal[f"{a}_cal"].to_numpy(float)),
-                      "bb": to_bin(b, cal[f"{b}_cal"].to_numpy(float)),
+    t = pd.DataFrame({"ba": to_display(a, to_bin(a, cal[f"{a}_cal"].to_numpy(float))),
+                      "bb": to_display(b, to_bin(b, cal[f"{b}_cal"].to_numpy(float))),
                       "v": df[value].to_numpy(float)}).dropna()
     if t.empty:
         return pd.DataFrame()
@@ -204,6 +220,22 @@ def _diverging_limits(vals, vcenter=0.0, weights=None, keep=1.0):
     return centre, centre - lim, centre + lim
 
 
+def _fade(values, weights=None, keep=0.98, floor=0.10, span=0.80):
+    """Alpha per cell: the ordinary fades out, the unusual stays.
+
+    The anchor is NOT a parameter, deliberately. It is always the data's own
+    weighted centre, so no caller can hand it a fixed scale's white. Passing
+    xwOBA's white (0.600) instead of its league mean (0.370) made the good
+    ridge the faintest thing in the figure and the ordinary shell the most
+    opaque, which is this function's purpose exactly inverted.
+    """
+    v = np.asarray(values, float)
+    centre = float(np.average(v, weights=weights) if weights is not None else v.mean())
+    seen = float(np.quantile(np.abs(v - centre), keep)) or 0.1
+    dist = np.clip(np.abs(v - centre) / seen, 0.0, 1.0)
+    return floor + span * dist ** 1.1, centre
+
+
 def _scale_for(value, vals, vcenter=0.0, weights=None, keep=1.0):
     """The colour limits for `value`: its fixed scale when it has one.
 
@@ -250,8 +282,8 @@ def hexbin(cal, df, axes=("x", "y"), value="delta_run_exp", min_n=50, title=None
     a, b = axes
     ax = ax or plt.gca()
     _dress(ax)
-    x = cal[f"{a}_cal"].to_numpy(float)
-    y = cal[f"{b}_cal"].to_numpy(float)
+    x = to_display(a, cal[f"{a}_cal"].to_numpy(float))
+    y = to_display(b, cal[f"{b}_cal"].to_numpy(float))
     c = df[value].to_numpy(float)
     ok = np.isfinite(x) & np.isfinite(y) & np.isfinite(c)
     ex, ey = _bulk_extent(x[ok], a), _bulk_extent(y[ok], b)
@@ -309,9 +341,9 @@ def cells3d(cal, df, value="estimated_woba_using_speedangle", min_n=25):
     to draw it. Shared by the static figure and the interactive one, which is
     the point: two views of one table cannot disagree.
     """
-    t = pd.DataFrame({"bx": to_bin("x", cal["x_cal"].to_numpy(float)),
-                      "by": to_bin("y", cal["y_cal"].to_numpy(float)),
-                      "bz": to_bin("z", cal["z_cal"].to_numpy(float)),
+    t = pd.DataFrame({"bx": to_display("x", to_bin("x", cal["x_cal"].to_numpy(float))),
+                      "by": to_display("y", to_bin("y", cal["y_cal"].to_numpy(float))),
+                      "bz": to_display("z", to_bin("z", cal["z_cal"].to_numpy(float))),
                       "v": df[value].to_numpy(float)}).dropna()
     if t.empty:
         return pd.DataFrame(columns=["bx", "by", "bz", "mean", "n"])
@@ -342,16 +374,14 @@ def cloud3d(cal, df, out_png: Path, title: str,
         return Path(out_png)
     centre, lo, hi = _scale_for(value, g["mean"], vcenter, weights=g["n"], keep=keep)
     norm = TwoSlopeNorm(vcenter=centre, vmin=lo, vmax=hi)
-    # Colour comes off the fixed scale so the figure is comparable; opacity is
-    # fitted to the spread actually present, or a fixed scale wider than the
-    # data would fade every marker at once.
-    seen = float(np.quantile(np.abs(g["mean"] - centre), keep)) or 0.1
-    dist = np.clip(np.abs(g["mean"] - centre) / seen, 0, 1)
+    # Colour comes off the fixed scale so the figure is comparable across
+    # figures; opacity comes off the data, via _fade, which owns its own anchor.
+    alpha, data_centre = _fade(g["mean"], weights=g["n"], keep=keep)
     # Alpha is baked into the face colours rather than passed as `alpha=`. A 3D
     # collection re-pairs its alpha array against its EDGE colours too, and with
     # edgecolors="none" that is 551 alphas against 0 colours, which raises.
     rgba = CMAP(norm(g["mean"].to_numpy(float)))
-    rgba[:, 3] = 0.10 + 0.80 * dist ** 1.1
+    rgba[:, 3] = alpha
     size = 8 + 42 * (g["n"] / g["n"].max()) ** 0.4
     views = ((22, -60), (22, 30), (60, -45), (8, -90))
     for i, (elev, azim) in enumerate(views, 1):
@@ -359,7 +389,7 @@ def cloud3d(cal, df, out_png: Path, title: str,
         ax.scatter(g["bx"], g["by"], g["bz"], c=rgba, s=size, depthshade=False)
         ax.set_xlabel("x: along the bat (in)", fontsize=8, color=INK, labelpad=1)
         ax.set_ylabel("y: timing (ms)", fontsize=8, color=INK, labelpad=1)
-        ax.set_zlabel("z: above the plane (in)", fontsize=8, color=INK, labelpad=1)
+        ax.set_zlabel("z: bat above the ball (in)", fontsize=8, color=INK, labelpad=1)
         ax.tick_params(labelsize=7, colors=INK)
         ax.view_init(elev=elev, azim=azim)
         ax.set_title(f"elev {elev}, azim {azim}", fontsize=9, color=INK)
@@ -377,7 +407,7 @@ def cloud3d(cal, df, out_png: Path, title: str,
     fig.suptitle(f"{title}\n one marker per {BINS['x']:.0f} in x {BINS['y']:.0f} ms x "
                  f"{BINS['z']:.0f} in cell of Savant's grid: {len(g):,} cells of at least "
                  f"{min_n} swings.\nFixed scale {lo:g} to {hi:g}, white at {centre:g}; "
-                 f"opacity rises with distance from white",
+                 f"opacity rises with distance from the league mean ({data_centre:.3f})",
                  fontsize=12, color=INK)
     out_png = Path(out_png)
     out_png.parent.mkdir(parents=True, exist_ok=True)
@@ -425,7 +455,7 @@ def cloud3d_html(cal, df, out_html: Path, title: str,
                         f"{len(g):,} cells of at least {min_n} swings. White at "
                         f"{centre:.3f}; marker size is cell count</sub>"),
         scene=dict(xaxis_title="x: along the bat (in)", yaxis_title="y: timing (ms)",
-                   zaxis_title="z: above the plane (in)",
+                   zaxis_title="z: bat above the ball (in)",
                    aspectmode="cube"),
         paper_bgcolor="white", margin=dict(l=0, r=0, t=70, b=0), height=820)
     fig.write_html(out_html, include_plotlyjs=True, full_html=True)
@@ -470,7 +500,9 @@ def league_bins_figure(table: pd.DataFrame, out_png: Path, min_n=100) -> Path:
     """
     fig, axs = plt.subplots(2, 3, figsize=(20, 9), sharex="col")
     for col, axis in enumerate(("x", "y", "z")):
-        t = table[table.axis == axis].sort_values("bin")
+        t = table[table.axis == axis].copy()
+        t["bin"] = to_display(axis, t["bin"].to_numpy(float))
+        t = t.sort_values("bin")
         w = BINS[axis]
         top, bot = axs[0][col], axs[1][col]
         _dress(top)
