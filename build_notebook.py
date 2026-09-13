@@ -481,27 +481,39 @@ HEAT_CODE = '''all_cal = pd.concat([CAL[s] for s in SEASONS], ignore_index=True)
 all_df = pd.concat([DF[s][["delta_run_exp", "contact_type", "estimated_woba_using_speedangle",
                            "pitcher", "batter"]] for s in SEASONS], ignore_index=True)
 figs = []
-figs.append(plots.heatmap_grid(
-    all_cal, all_df, "delta_run_exp", FIGURES / "heatmap_runvalue_all_swings.png",
+figs.append(plots.hexbin_grid(
+    all_cal, all_df, "delta_run_exp", FIGURES / "hexbin_runvalue_all_swings.png",
     f"Run value per swing (batter perspective), all swings, {min(SEASONS)} to {max(SEASONS)}"))
 ip = (all_df.contact_type == "in_play").to_numpy()
-figs.append(plots.heatmap_grid(
-    all_cal[ip].reset_index(drop=True), all_df[ip].reset_index(drop=True),
-    "estimated_woba_using_speedangle", FIGURES / "heatmap_xwoba_in_play.png",
-    f"Expected wOBA on contact, balls in play, {min(SEASONS)} to {max(SEASONS)}", min_n=50))
+ip_cal = all_cal[ip].reset_index(drop=True)
+ip_df = all_df[ip].reset_index(drop=True)
+# Every panel and every figure draws xwOBA on the same fixed 0 to 1.2 scale,
+# white at 0.600, and run value on -0.3 to 0.3, white at zero. plots.SCALES
+# holds both; the call sites do not choose.
+figs.append(plots.hexbin_grid(
+    ip_cal, ip_df, "estimated_woba_using_speedangle", FIGURES / "hexbin_xwoba_in_play.png",
+    f"Expected wOBA on contact, balls in play, {min(SEASONS)} to {max(SEASONS)}",
+    min_n=50))
 
-top_p = all_df.pitcher.value_counts().idxmax()
-sel = (all_df.pitcher == top_p).to_numpy()
-figs.append(plots.heatmap_grid(
-    all_cal[sel].reset_index(drop=True), all_df[sel].reset_index(drop=True), "delta_run_exp",
-    FIGURES / "heatmap_runvalue_top_pitcher.png",
-    f"Run value allowed per swing, pitcher id {top_p}, {int(sel.sum())} swings", min_n=5))
-top_b = all_df.batter.value_counts().idxmax()
-sel = (all_df.batter == top_b).to_numpy()
-figs.append(plots.heatmap_grid(
-    all_cal[sel].reset_index(drop=True), all_df[sel].reset_index(drop=True), "delta_run_exp",
-    FIGURES / "heatmap_runvalue_top_batter.png",
-    f"Run value per swing, batter id {top_b}, {int(sel.sum())} swings", min_n=5))
+# The three axes at once. The 2D panels each marginalise one axis away; these do
+# not, which is the only way to see that the best cells sit on a surface rather
+# than at a point.
+figs.append(plots.cloud3d(
+    ip_cal, ip_df, FIGURES / "cloud3d_xwoba_in_play.png",
+    f"Expected wOBA on contact over x, y and z, balls in play, "
+    f"{min(SEASONS)} to {max(SEASONS)}",
+    value="estimated_woba_using_speedangle", min_n=25))
+figs.append(plots.cloud3d(
+    all_cal, all_df, FIGURES / "cloud3d_runvalue_all_swings.png",
+    f"Run value per swing over x, y and z, all swings, {min(SEASONS)} to {max(SEASONS)}",
+    value="delta_run_exp", min_n=60))
+CLOUD_HTML = plots.cloud3d_html(
+    ip_cal, ip_df, FIGURES / "cloud3d_xwoba_in_play.html",
+    f"Expected wOBA on contact over x, y and z, balls in play, "
+    f"{min(SEASONS)} to {max(SEASONS)}",
+    value="estimated_woba_using_speedangle", min_n=25)
+print("interactive:", CLOUD_HTML)
+
 figs.append(plots.league_bins_figure(BINS_TABLE, FIGURES / "league_bins_2025.png"))
 for kind in ("pitcher", "batter"):
     ours = validate.player_rates(DF[FIT], CATS[FIT], kind, CAL[FIT])
@@ -556,6 +568,23 @@ def strip_images(nb) -> int:
     return dropped
 
 
+def strip_local_paths(nb):
+    """Take papermill's run record out before the notebook is committed.
+
+    It records `input_path` and `output_path` as ABSOLUTE paths, so a notebook
+    built here and published carries the checkout's full location, naming a
+    private repo and a home directory in a public file. Nothing reads the block
+    and it is regenerated on every run, so it comes out whole.
+    """
+    n = 0
+    if nb.metadata.pop("papermill", None) is not None:
+        n += 1
+    for cell in nb.cells:
+        if cell.get("metadata", {}).pop("papermill", None) is not None:
+            n += 1
+    return n
+
+
 def main():
     import nbformat
     import subprocess
@@ -573,8 +602,10 @@ def main():
                         "--cwd", str(HERE), "--log-output", "--no-progress-bar"], check=True)
     nb = nbformat.read(out, as_version=4)
     n = strip_images(nb)
+    paths = strip_local_paths(nb)
     nbformat.write(nb, out)
-    print(f"=== stripped {n} figure outputs, {out.stat().st_size/1e6:.2f} MB", flush=True)
+    print(f"=== stripped {n} figure outputs and {paths} papermill path blocks, "
+          f"{out.stat().st_size/1e6:.2f} MB", flush=True)
     print("=== done", flush=True)
 
 

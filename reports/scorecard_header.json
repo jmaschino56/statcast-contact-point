@@ -1,0 +1,8 @@
+{
+ "swing filter": "bat_speed_nobunt",
+ "swing filter median abs rel error": "pitcher 0.0021, batter 0.0048",
+ "tail join rate": "0.99995 (21328 of 21329, 1 unmatched)",
+ "discovery": "x=fallback(r2 0.712)  y=recovered(r2 0.951)  z=fallback(r2 0.665)",
+ "2026 snapshot: last game date": "2026-09-11",
+ "seasons": "fit 2025, holdouts (2024, 2026)"
+}

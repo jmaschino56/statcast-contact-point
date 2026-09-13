@@ -128,7 +128,9 @@ def heatmap(cal, df, axes=("x", "y"), value="delta_run_exp", min_n=50, title=Non
     m = ax.pcolormesh(x_edges, y_edges, np.ma.masked_invalid(piv.to_numpy()), cmap=CMAP,
                       norm=TwoSlopeNorm(vcenter=centre, vmin=lo, vmax=hi),
                       shading="flat")
-    panel_legend(ax, threshold_lines(ax, (a, b)))
+    # A fixed corner here, not "best": the mesh fills the panel, so the overlap
+    # search that places the hexbin legends has nothing to find.
+    panel_legend(ax, threshold_lines(ax, (a, b)), loc="upper left")
     ax.set_xlabel(AXIS_LABEL[a], fontsize=9, color=INK)
     ax.set_ylabel(AXIS_LABEL[b], fontsize=9, color=INK)
     if title:
@@ -226,7 +228,7 @@ PANELS = (("x", "z", True, True), ("x", "y", False, True), ("y", "z", False, Fal
 # were unlabelled and three different dashed styles shared a single caption.
 MID_NAME = {"x": "centered", "y": "on time", "z": "lined up"}
 AXIS_UNIT = {"x": "in", "y": "ms", "z": "in"}
-AXIS_OF = {"x": "along the bat", "y": "of the ball", "z": "of the swing plane"}
+AXIS_OF = {"x": " along the bat", "y": "", "z": " of the swing plane"}
 
 BAT_TIP_X, BAT_LENGTH = 6.0, 34.0
 BAT_R, BALL_R = 1.30, 1.45      # barrel radius and a baseball's radius, inches
@@ -336,8 +338,8 @@ def threshold_lines(ax, axes_pair):
         for t in (-THRESH[axis], THRESH[axis]):
             draw(t, color=INK, lw=1.0, ls=(0, (6, 4)), alpha=0.85, zorder=3)
         keys.append((Line2D([], [], color=INK, lw=1.0, ls=(0, (6, 4))),
-                     f"Savant calls it {MID_NAME[axis]} within +/-"
-                     f"{THRESH[axis]:g} {AXIS_UNIT[axis]} {AXIS_OF[axis]}"))
+                     f"Savant calls it {MID_NAME[axis]}: within +/-"
+                     f"{THRESH[axis]:g} {AXIS_UNIT[axis]}{AXIS_OF[axis]}"))
     return keys
 
 

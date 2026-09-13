@@ -32,9 +32,9 @@ Tied up is negative for all 1,826 of Savant's own tail rows under both hands,
 because it measures handle against tip along the bat and does not care which
 side of the plate the batter stands on.
 
-Because x is inches along the bat, the panels carry a 34 inch bat outlined over
-the hexagons, with its sweet spot at zero. That is where exit velocity actually
-peaks: 100.3 mph at x = +0.5, falling to 87 by 2.5 inches either way and 75 by
+Because x is inches along the bat, the two panels that carry x have a 34 inch
+bat outlined over the hexagons, with its sweet spot at zero. That is where exit
+velocity actually peaks: 100.3 mph at x = +0.5, falling to 87 by 2.5 inches either way and 75 by
 6. The tip lands at +6 and the knob at -28.
 
 On the x/z panel both axes are inches, so the bat is drawn in true inches on
@@ -47,10 +47,12 @@ on it. It also shows why under beats over: the red core sits inside the barrel
 and slightly above the bat's centre line, which is the bat meeting the underside
 of the ball.
 
-The timing panel cannot be locked to inches, so its bat keeps the x scale and is
-sized from the panel's own aspect, and the third panel shows the barrel edge on,
-a 2.6 inch band that does not vary with timing. Each caption says which of the
-three it is.
+The x/y panel cannot be locked to inches, because milliseconds are not a
+thickness, so its bat keeps the x scale and takes its height from the panel's
+own aspect. The y/z panel carries no bat at all: neither of its axes runs along
+one, so the silhouette would have been decoration. Every line each panel draws
+is named in that panel's own legend, with the number it sits at, so a Savant
+threshold is never confused with the barrel's reach.
 
 The overlay earns its space by showing that x is not symmetric. Nothing reaches
 the knob, with 0.0% of swings below -28 and a 1st percentile of only -8.5, while
@@ -190,9 +192,16 @@ python build_notebook.py
 pytest tests/ -q
 ```
 
+`contact_point.ipynb` is generated, so edit `build_notebook.py` and rebuild
+rather than editing the notebook: every cell lives in that script as a string,
+and a direct edit is overwritten by the next build. It runs papermill twice on
+purpose, because the scorecard cell sits at the top and reads a file the last
+cell writes, then strips the embedded figures so the committed notebook keeps
+its tables and printed output while the PNGs ship separately in `figures/`.
+
 The scrape throttles to about one request per second and runs roughly 3,000
 requests per season, so budget an hour per season on the first run. Seven tests
-skip without the cached data; the other 82 run standalone.
+skip without the cached data; the other 127 run standalone.
 
 ## Limits
 
