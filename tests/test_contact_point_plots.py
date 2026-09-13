@@ -537,46 +537,121 @@ def test_a_bat_panel_widens_its_x_range_to_hold_the_whole_bat():
     plt.close(fig)
 
 
-def test_the_bat_is_drawn_only_where_x_is_an_axis():
-    from matplotlib.patches import Polygon
+def _bat_lines(ax):
+    """The two strokes draw_bat lays down, found by their point count."""
+    return [l for l in ax.lines if len(l.get_xdata()) == 1200]
+
+
+def _flat_lines(ax):
+    """y values of the horizontal rules on the panel."""
+    return {round(float(l.get_ydata()[0]), 4) for l in ax.lines
+            if len(l.get_xdata()) == 2 and l.get_ydata()[0] == l.get_ydata()[1]}
+
+
+def test_the_full_bat_profile_goes_only_where_x_is_an_axis():
+    """Only x runs along the bat, so only x panels can carry its profile."""
     import matplotlib.pyplot as plt
     cal, df = _fake(n=20000, seed=42)
     counts = {}
     for pair in (("x", "y"), ("x", "z"), ("y", "z")):
         fig, ax = plt.subplots()
         plots.hexbin(cal, df, pair, "delta_run_exp", min_n=5, ax=ax, cbar=False)
-        counts[pair] = sum(isinstance(p, Polygon) for p in ax.patches)
+        counts[pair] = len(_bat_lines(ax))
         plt.close(fig)
-    assert counts[("x", "y")] == 1 and counts[("x", "z")] == 1, counts
-    assert counts[("y", "z")] == 0, "a bat was drawn on the timing/plane panel"
+    assert counts[("x", "y")] == 2 and counts[("x", "z")] == 2, counts
+    assert counts[("y", "z")] == 0, "a bat profile was drawn along milliseconds"
 
 
-def test_the_bat_strip_clears_the_data_for_any_dataset():
-    """The silhouette sits in headroom opened above the data, never on it.
+def test_the_timing_panel_shows_the_barrel_edge_on():
+    """Neither axis runs along the bat there, but z is still inches.
 
-    Asserted against the GEOMETRY, not against a fixture. The data can reach at
-    most 1/(1 + headroom) of the axes, because the axes are the data's own
-    extent expanded by that fraction. A fixture whose points fall short of its
-    extent will clear a strip that real data would collide with, which is how
-    the first version of this test passed with the headroom cut to 0.10.
+    So what the panel can honestly carry is the barrel's 2.6 in depth, which
+    does not vary with timing, plus the same 2.75 in reach lines.
     """
-    ceiling = 1.0 / (1.0 + plots.BAT_HEADROOM)
-    bat_bottom = plots.BAT_Y - plots.BAT_HALF * 1.5
-    caption_bottom = plots.BAT_TEXT_Y - 0.025
-    assert bat_bottom > ceiling, ("bat can sit on the data", bat_bottom, ceiling)
-    assert caption_bottom > ceiling, ("caption can sit on the data",
-                                      caption_bottom, ceiling)
-    assert plots.BAT_TEXT_Y < plots.BAT_Y - plots.BAT_HALF, "caption overlaps the bat"
-    assert plots.BAT_Y + plots.BAT_HALF < 1.0, "the bat runs off the top of the panel"
-
-
-def test_the_bat_strip_is_above_the_drawn_hexagons():
     import matplotlib.pyplot as plt
-    cal, df = _fake(n=20000, seed=43)
+    cal, df = _fake(n=20000, seed=46)
+    fig, ax = plt.subplots()
+    plots.hexbin(cal, df, ("y", "z"), "delta_run_exp", min_n=5, ax=ax, cbar=False)
+    flat = _flat_lines(ax)
+    reach = plots.BAT_R + plots.BALL_R
+    for want in (plots.BAT_R, -plots.BAT_R, reach, -reach):
+        assert round(want, 4) in flat, (want, flat)
+    plt.close(fig)
+
+
+def test_on_the_x_z_panel_the_bat_is_true_inches_on_both_axes():
+    """Both axes are inches there, so the barrel is drawn at its real radius.
+
+    That is what makes the outline mean something: a ball touches the barrel
+    while its centre is within BAT_R + BALL_R of the bat's axis, and 98.5
+    percent of balls in play fall inside that against 53.9 percent of whiffs.
+    """
+    import matplotlib.pyplot as plt
+    cal, df = _fake(n=20000, seed=44)
+    fig, ax = plt.subplots()
+    plots.hexbin(cal, df, ("x", "z"), "delta_run_exp", min_n=5, ax=ax, cbar=False)
+    line = _bat_lines(ax)[0]
+    assert line.get_transform() == ax.transData, "the bat is not in data units"
+    y = np.asarray(line.get_ydata(), float)
+    # 1e-3, not 1e-9: the outline is 600 interpolated points and need not land
+    # exactly on the profile's peak. Any RESCALING moves it far more than this.
+    assert abs(y.max() - plots.BAT_R) < 1e-3, (y.max(), plots.BAT_R)
+    assert abs(y.min() + plots.BAT_R) < 1e-3, (y.min(), -plots.BAT_R)
+    reach = plots.BAT_R + plots.BALL_R
+    flat = _flat_lines(ax)
+    assert round(reach, 4) in flat and round(-reach, 4) in flat, (reach, flat)
+    plt.close(fig)
+
+
+def test_on_the_x_y_panel_the_bat_height_is_not_in_data_units():
+    """The other axis is milliseconds, which no bat has a thickness in."""
+    import matplotlib.pyplot as plt
+    cal, df = _fake(n=20000, seed=45)
     fig, ax = plt.subplots()
     plots.hexbin(cal, df, ("x", "y"), "delta_run_exp", min_n=5, ax=ax, cbar=False)
-    hb = [c for c in ax.collections if hasattr(c, "get_offsets")][0]
-    lo, hi = ax.get_ylim()
-    top_frac = (float(np.max(hb.get_offsets()[:, 1])) - lo) / (hi - lo)
-    assert plots.BAT_TEXT_Y - 0.025 > top_frac, (plots.BAT_TEXT_Y, top_frac)
+    line = _bat_lines(ax)[0]
+    assert line.get_transform() != ax.transData, "milliseconds were read as inches"
+    y = np.asarray(line.get_ydata(), float)
+    assert 0.0 <= y.min() and y.max() <= 1.0, "not an axes fraction"
+    assert y.max() - y.min() < 2.2 * plots.BAT_FRAC_HALF + 1e-9
+    plt.close(fig)
+
+
+def test_the_x_z_panel_is_held_to_equal_aspect():
+    """Without it the vertical stretches about 2.75x and the bat reads stubby."""
+    import matplotlib.pyplot as plt
+    cal, df = _fake(n=20000, seed=47)
+    fig, ax = plt.subplots()
+    plots.hexbin(cal, df, ("x", "z"), "delta_run_exp", min_n=5, ax=ax, cbar=False,
+                 equal=True)
+    assert ax.get_aspect() == 1.0, ax.get_aspect()
+    plt.close(fig)
+
+    fig, ax = plt.subplots()
+    plots.hexbin(cal, df, ("x", "y"), "delta_run_exp", min_n=5, ax=ax, cbar=False)
+    assert ax.get_aspect() != 1.0, "milliseconds were locked to inches"
+    plt.close(fig)
+
+
+def test_the_timing_panel_bat_is_drawn_isotropic():
+    """Its height is not a data quantity, so it is sized to LOOK to scale.
+
+    A fixed fraction left it about twice too thick beside the equal-aspect
+    panel, which is what made it read stubby.
+    """
+    import matplotlib.pyplot as plt
+    cal, df = _fake(n=20000, seed=48)
+    fig, ax = plt.subplots(figsize=(8, 5))
+    plots.hexbin(cal, df, ("x", "y"), "delta_run_exp", min_n=5, ax=ax, cbar=False)
+    line = _bat_lines(ax)[0]
+    y = np.asarray(line.get_ydata(), float)
+    x = np.asarray(line.get_xdata(), float)
+    pos = ax.get_position()
+    w_in = pos.width * fig.get_figwidth()
+    h_in = pos.height * fig.get_figheight()
+    x_lo, x_hi = ax.get_xlim()
+    length_in = (x.max() - x.min()) / (x_hi - x_lo) * w_in     # drawn, figure inches
+    thick_in = (y.max() - y.min()) * h_in
+    assert abs(length_in / thick_in - plots.BAT_LENGTH / (2 * plots.BAT_R)) < 0.6, (
+        length_in / thick_in, plots.BAT_LENGTH / (2 * plots.BAT_R))
     plt.close(fig)

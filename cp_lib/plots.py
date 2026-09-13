@@ -220,52 +220,104 @@ def rate_scatter(ours: pd.DataFrame, sav: pd.DataFrame, rate: str, out_png: Path
 # hands, but a swing can miss by any distance off the end, which is what the
 # flail tail is.
 BAT_TIP_X, BAT_LENGTH = 6.0, 34.0
-# Geometry of the reserved strip, in axes fractions, named so the drawing and
-# the test that checks it cannot drift apart. HEADROOM is added above the data's
-# own range; everything else is measured in the axes AFTER that expansion.
-BAT_HEADROOM, BAT_Y, BAT_HALF, BAT_TEXT_Y = 0.22, 0.945, 0.046, 0.862
+BAT_R, BALL_R = 1.30, 1.45      # barrel radius and a baseball's radius, inches
 _BAT_PROFILE = (        # (inches from the knob end, radius in inches)
     (0.00, 0.10), (0.10, 0.80), (0.55, 0.98), (1.05, 0.90), (1.45, 0.58),
     (2.20, 0.48), (9.00, 0.46), (13.0, 0.50), (16.5, 0.62), (19.5, 0.85),
     (22.5, 1.12), (25.5, 1.27), (31.0, 1.30), (32.8, 1.26), (33.5, 1.12),
     (34.0, 0.10),
 )
+# Where the bat sits on a panel whose other axis is NOT inches. A fraction of
+# the axes height, since milliseconds have no bat in them.
+BAT_FRAC_HALF = 0.055
 
 
 def bat_outline(n: int = 600):
-    """(x along the bat, half thickness in inches) for one bat silhouette."""
+    """(x along the bat, radius in inches) for one bat silhouette.
+
+    Anchored so the sweet spot is x = 0, which is where exit velocity actually
+    peaks: 100.3 mph at +0.5, 87 by 2.5 in either way, 75 by 6 (2025 balls in
+    play). That puts the tip at +6 and the knob at -28.
+    """
     s_pts = np.array([p[0] for p in _BAT_PROFILE], float)
     r_pts = np.array([p[1] for p in _BAT_PROFILE], float)
     s = np.linspace(0.0, BAT_LENGTH, n)
-    r = np.interp(s, s_pts, r_pts)
-    return s - (BAT_LENGTH - BAT_TIP_X), r
+    return s - (BAT_LENGTH - BAT_TIP_X), np.interp(s, s_pts, r_pts)
 
 
-def draw_bat(ax, y_frac=BAT_Y, max_half=BAT_HALF, color="#6f6558", alpha=0.85,
-             label=True):
-    """Lay a to-scale bat along the x axis, in a reserved strip of the panel.
+def _isotropic_half(ax, fallback=BAT_FRAC_HALF):
+    """Axes-fraction half-thickness that makes the bat look to scale.
 
-    x is in DATA units so the bat lines up with the axis it describes; the
-    vertical is in AXES fractions, because the other axis is milliseconds or
-    inches-above-plane and a bat has no thickness in either.
+    The panel's own aspect decides it: one data inch on x is some number of
+    figure inches, and the bat's half-radius has to be that same number of
+    figure inches expressed as a fraction of the panel's height.
     """
-    from matplotlib.patches import Polygon
-    x, r = bat_outline()
-    k = max_half / r.max()
-    pts = np.concatenate([np.column_stack([x, y_frac + r * k]),
-                          np.column_stack([x[::-1], y_frac - r[::-1] * k])])
-    ax.add_patch(Polygon(pts, closed=True, facecolor=color, edgecolor="#4a4339",
-                         lw=0.6, alpha=alpha, zorder=6,
-                         transform=ax.get_xaxis_transform(), clip_on=True))
-    ax.plot([0, 0], [y_frac - max_half * 1.5, y_frac + max_half * 1.5],
-            color="#4a4339", lw=0.9, alpha=0.9, zorder=7,
-            transform=ax.get_xaxis_transform(), clip_on=True)
+    fig = ax.get_figure()
+    pos = ax.get_position()
+    w_in, h_in = pos.width * fig.get_figwidth(), pos.height * fig.get_figheight()
+    x_lo, x_hi = ax.get_xlim()
+    if w_in <= 0 or h_in <= 0 or x_hi <= x_lo:
+        return fallback
+    fig_in_per_data_in = w_in / (x_hi - x_lo)
+    return float(BAT_R * fig_in_per_data_in / h_in)
+
+
+def draw_bat(ax, axes_pair=("x", "y"), color="#2f2a22", label=True):
+    """Put the bat on the panel, drawn as whatever that panel can honestly show.
+
+    x/z   both axes are inches, so the full profile goes on in true inches and
+          the panel is held to equal aspect: a real bat shape, not a club.
+    x/y   x is inches along the bat but the other axis is milliseconds, which no
+          bat has a thickness in, so the profile keeps its x scale and takes a
+          fixed share of the panel height.
+    y/z   neither axis runs along the bat, but z is still inches, so what shows
+          is the barrel EDGE ON: a 2.6 in band that does not depend on timing.
+
+    The dashed lines are BAT_R + BALL_R = 2.75 in, the furthest a ball's centre
+    can sit and still touch the barrel. 98.5 percent of balls in play fall
+    inside it, against 76.8 of fouls and 53.9 of whiffs, and nothing in the
+    reconstruction was ever told a bat exists.
+    """
+    a, b = axes_pair
+    reach = BAT_R + BALL_R
+    strokes = ((4.0, "#ffffff", 0.85, 7), (2.0, color, 1.0, 8))
+    if a == "x":
+        x, r = bat_outline()
+        if b == "z":
+            up, dn, trans = r, -r, ax.transData
+            note = f"{BAT_LENGTH:.0f} in bat, true inches both axes"
+        else:
+            lo, hi = ax.get_ylim()
+            mid = (0.0 - lo) / (hi - lo) if hi > lo else 0.5
+            # The vertical is milliseconds, so the thickness is not a data
+            # quantity. Pick the fraction that makes the drawing ISOTROPIC
+            # anyway, so a 34 by 2.6 in bat looks like one. A fixed fraction
+            # left it about twice too thick next to the equal-aspect panel.
+            k = _isotropic_half(ax) / r.max()
+            up, dn, trans = mid + r * k, mid - r * k, ax.get_xaxis_transform()
+            note = f"{BAT_LENGTH:.0f} in bat, true inches along x; height to match"
+        xs = np.concatenate([x, x[::-1]])
+        ys = np.concatenate([up, dn[::-1]])
+        for lw, c, al, z in strokes:
+            ax.plot(xs, ys, color=c, lw=lw, alpha=al, solid_joinstyle="round",
+                    zorder=z, transform=trans, clip_on=True)
+    elif b == "z":
+        for edge in (-BAT_R, BAT_R):
+            for lw, c, al, z in strokes:
+                ax.axhline(edge, color=c, lw=lw, alpha=al, zorder=z)
+        note = f"barrel edge on, {2 * BAT_R:.1f} in deep at every timing"
+    else:
+        return ax
+    if b == "z":
+        for t in (-reach, reach):
+            ax.axhline(t, color=color, lw=0.9, ls=(0, (4, 3)), alpha=0.55, zorder=6)
+        note += f"; dashed = {reach:.2f} in barrel reach"
     if label:
-        ax.text(x.min(), BAT_TEXT_Y,
-                f"{BAT_LENGTH:.0f} in bat to scale; the tick is the sweet spot, "
-                f"the tip ends at {BAT_TIP_X:+.0f}",
-                fontsize=7.5, color="#6f6558", ha="left", va="top", zorder=7,
-                transform=ax.get_xaxis_transform(), clip_on=True)
+        # The equal-aspect panel is short enough that the caption lands on the
+        # reach line, so it carries its own backing rather than being moved.
+        ax.text(0.01, 0.02, note, fontsize=7.5, color=color, alpha=0.9,
+                ha="left", va="bottom", zorder=9, transform=ax.transAxes,
+                bbox=dict(facecolor="white", alpha=0.72, edgecolor="none", pad=1.6))
     return ax
 
 
@@ -358,7 +410,8 @@ def _bulk_extent(v: np.ndarray, axis: str, keep=0.998):
 
 
 def hexbin(cal, df, axes=("x", "y"), value="delta_run_exp", min_n=50, title=None,
-           ax=None, gridsize=34, vmax=None, vcenter=0.0, cbar=True, bat=True):
+           ax=None, gridsize=34, vmax=None, vcenter=0.0, cbar=True, bat=True,
+           equal=False, y_keep=0.998):
     """Mean of `value` over hexagonal cells of the reconstructed plane.
 
     Hexagons rather than the Savant rectangles because these panels are a
@@ -378,7 +431,7 @@ def hexbin(cal, df, axes=("x", "y"), value="delta_run_exp", min_n=50, title=None
     y = to_display(b, cal[f"{b}_cal"].to_numpy(float))
     c = df[value].to_numpy(float)
     ok = np.isfinite(x) & np.isfinite(y) & np.isfinite(c)
-    ex, ey = _bulk_extent(x[ok], a), _bulk_extent(y[ok], b)
+    ex, ey = _bulk_extent(x[ok], a), _bulk_extent(y[ok], b, keep=y_keep)
     if bat and a == "x" and ex is not None:
         # Hold the whole bat, knob included, or the silhouette is a cone with
         # its handle off the page. gridsize rises with the widened extent so the
@@ -408,12 +461,13 @@ def hexbin(cal, df, axes=("x", "y"), value="delta_run_exp", min_n=50, title=None
         ax.axhline(t, color=INK, lw=0.9, ls="--", alpha=0.8, zorder=3)
     ax.set_xlim(*ex)
     ax.set_ylim(*ey)
-    if bat and a == "x":
-        # Open headroom at the top and put the bat in it, so the silhouette
-        # never sits on top of a hexagon it is supposed to explain.
-        span = ey[1] - ey[0]
-        ax.set_ylim(ey[0], ey[1] + BAT_HEADROOM * span)
-        draw_bat(ax)
+    if bat:
+        draw_bat(ax, axes_pair=(a, b))
+    if equal:
+        # Both axes are inches. Equal aspect is what makes the silhouette a bat
+        # instead of a club; without it the vertical is stretched about 2.75x
+        # and a 34 by 2.6 in bat reads as 34 by 7.
+        ax.set_aspect("equal", adjustable="box")
     ax.set_xlabel(AXIS_LABEL[a], fontsize=9, color=INK)
     ax.set_ylabel(AXIS_LABEL[b], fontsize=9, color=INK)
     if title:
@@ -427,20 +481,38 @@ def hexbin(cal, df, axes=("x", "y"), value="delta_run_exp", min_n=50, title=None
 
 def hexbin_grid(cal, df, value, out_png: Path, title: str, min_n=50, gridsize=34,
                 vcenter=0.0, bat=True) -> Path:
-    # The two x panels carry a whole 34 in bat plus the flail tail, about 53 in
-    # of range against 50 ms on the third, so they get more width or their
-    # hexagons come out squeezed next to it.
-    ratios = [1.3, 1.3, 1.0] if bat else [1, 1, 1]
-    fig, axs = plt.subplots(1, 3, figsize=(22, 6),
-                            gridspec_kw={"width_ratios": ratios})
-    for ax, pair in zip(axs, (("x", "y"), ("x", "z"), ("y", "z"))):
+    """Three planes of the contact point, with the bat on each.
+
+    The x/z panel is held to equal aspect so its bat is a real 34 by 2.6 in
+    shape, which makes it short and wide, so it gets a row to itself rather than
+    a third of one.
+    """
+    if bat:
+        # The equal-aspect panel shrinks its own box to fit, so its row is sized
+        # close to the height that aspect implies or the gap above it is wasted.
+        fig = plt.figure(figsize=(20, 10))
+        gs = fig.add_gridspec(2, 2, height_ratios=[1.0, 1.6],
+                              hspace=0.20, wspace=0.18)
+        panels = [(fig.add_subplot(gs[0, :]), ("x", "z")),
+                  (fig.add_subplot(gs[1, 0]), ("x", "y")),
+                  (fig.add_subplot(gs[1, 1]), ("y", "z"))]
+    else:
+        fig, axs = plt.subplots(1, 3, figsize=(20, 6))
+        panels = list(zip(axs, (("x", "y"), ("x", "z"), ("y", "z"))))
+    for ax, pair in panels:
+        # The equal-aspect panel gets a tighter z window. Its height is dictated
+        # by that range, and the last 1 percent of z is a tail that would halve
+        # the panel to show 0.74 percent of all swings and 0.0 percent of balls
+        # in play.
+        eq = bat and pair == ("x", "z")
         hexbin(cal, df, pair, value, min_n=min_n, ax=ax, gridsize=gridsize,
-               vcenter=vcenter, bat=bat)
+               vcenter=vcenter, bat=bat, equal=eq, y_keep=0.99 if eq else 0.998)
     fig.suptitle(title, fontsize=13, color=INK)
-    fig.tight_layout()
+    if not bat:
+        fig.tight_layout()
     out_png = Path(out_png)
     out_png.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_png, dpi=DPI, facecolor="white")
+    fig.savefig(out_png, dpi=DPI, facecolor="white", bbox_inches="tight")
     plt.close(fig)
     return out_png
 

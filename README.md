@@ -32,10 +32,25 @@ Tied up is negative for all 1,826 of Savant's own tail rows under both hands,
 because it measures handle against tip along the bat and does not care which
 side of the plate the batter stands on.
 
-Because x is inches along the bat, the panels carry a 34 inch bat drawn to the
-same scale, with its sweet spot at zero. That is where exit velocity actually
+Because x is inches along the bat, the panels carry a 34 inch bat outlined over
+the hexagons, with its sweet spot at zero. That is where exit velocity actually
 peaks: 100.3 mph at x = +0.5, falling to 87 by 2.5 inches either way and 75 by
 6. The tip lands at +6 and the knob at -28.
+
+On the x/z panel both axes are inches, so the bat is drawn in true inches on
+both and the panel is held to equal aspect. That makes the outline checkable: a
+ball touches the barrel while its centre is within 2.75 inches of the bat's
+axis, and 98.5% of balls in play fall inside that line against 76.8% of fouls
+and 53.9% of whiffs. Nothing in the reconstruction was ever told a bat exists,
+so putting nearly every ball in play within reach of one is an independent check
+on it. It also shows why under beats over: the red core sits inside the barrel
+and slightly above the bat's centre line, which is the bat meeting the underside
+of the ball.
+
+The timing panel cannot be locked to inches, so its bat keeps the x scale and is
+sized from the panel's own aspect, and the third panel shows the barrel edge on,
+a 2.6 inch band that does not vary with timing. Each caption says which of the
+three it is.
 
 The overlay earns its space by showing that x is not symmetric. Nothing reaches
 the knob, with 0.0% of swings below -28 and a 1st percentile of only -8.5, while
