@@ -226,3 +226,37 @@ is tested; nothing calls it.
 averages over a couple hundred different batters, so each batter's personal error
 in stance and bat height cancels. A batter's rate is the same batter every time,
 and that offset never cancels.
+
+## Credits
+
+Three of the four inputs this reconstruction stands on are other people's work.
+
+**Baseball Savant and MLB Advanced Media.** The Swing Timing and Miss Distance
+leaderboard, every category definition used here (centered, on time, lined up),
+and the per-swing values on its tail endpoints, which are the only ground truth
+this is validated against. All of it is public. None of it is redistributed in
+this repo.
+
+**Driveline Baseball, "Bat Path", Saberseminar 2026 (Pelletier, Ehrlich,
+Stokey).** Three things come from that deck and the reconstruction does not work
+without them: the perfect-contact exit velocity ceiling
+`EV = 1.23 * bat_speed + 0.23 * pitch_speed`, validated there within 1 percent
+against 600,000+ MLB swings; the asymmetric exit velocity loss curve against
+inches from the sweet spot, which is what gets inverted to place contact swings
+along the bat; and the relationship between getting under the ball and launch
+angle that stands behind z. The deck is not included here and is theirs to
+distribute.
+
+**Alan Nathan.** The bat-ball collision physics the deck's inversion is built
+on, and specifically the node geometry that makes the handle side of that loss
+curve steeper than the tip side, which is why the same exit velocity deficit
+implies a contact point closer to the sweet spot on the handle side.
+
+**Nava Wolfish.** The public bat-ball collision model the deck builds on.
+
+Two things are not theirs and should not be read as endorsed by them. Timing is
+not a dimension in the deck; every timing definition here comes from Savant. And
+the loss curve stops at a 40 mph deficit, 14 inches from the sweet spot, while
+5.35 percent of inversion rows land past it; continuing it at the slope of its
+final segment is this project's choice, made to preserve rank order ahead of a
+quantile map, not a claim the deck makes about a bat 20 inches off the barrel.
