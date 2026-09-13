@@ -1,0 +1,4 @@
+chosen rule: bat_speed_nobunt
+
+pitcher: players=826 ours=328468 savant=326997 diff=1471 median_diff=1.0 p05=0.0 p95=6.0 exact_match=0.410
+batter: players=671 ours=329039 savant=326997 diff=2042 median_diff=2.0 p05=0.0 p95=9.0 exact_match=0.255

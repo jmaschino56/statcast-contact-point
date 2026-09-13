@@ -1,0 +1,13 @@
+season,table,in_sample,calibration_target,mean_mae_rates,mean_r_rates,players
+2024,batter by contact type,False,False,0.0428,0.503,487
+2024,batter rates,False,False,0.0369,0.662,512
+2024,pitcher by contact type,False,False,0.0267,0.695,560
+2024,pitcher rates,False,False,0.0203,0.876,598
+2025,batter by contact type,True,False,0.0412,0.508,490
+2025,batter rates,True,False,0.0359,0.677,523
+2025,pitcher by contact type,True,True,0.0259,0.693,570
+2025,pitcher rates,True,False,0.0205,0.861,618
+2026,batter by contact type,False,False,0.0436,0.507,484
+2026,batter rates,False,False,0.0369,0.663,512
+2026,pitcher by contact type,False,False,0.0283,0.686,548
+2026,pitcher rates,False,False,0.0209,0.864,580

@@ -1,0 +1,445 @@
+{
+ "y_com_ft": 0.0,
+ "tilt_sign": 1.0,
+ "join": {
+  "tails": 21329,
+  "exact": 21328,
+  "nearest": 0,
+  "unmatched": 1,
+  "fanout_rows_dropped": 12
+ },
+ "join_rate": 0.9999531154765812,
+ "n_labeled": 21328,
+ "n_tail_lists": {
+  "1": 7587,
+  "2": 4445,
+  "3": 3339,
+  "4": 3037,
+  "5": 1209,
+  "6": 1211,
+  "7": 349,
+  "8": 152
+ },
+ "verdicts": {
+  "x": {
+   "status": "fallback",
+   "best": {
+    "name": "x_full_geometry",
+    "axis": "x",
+    "r2": 0.7116674942179204,
+    "label_agreement": 0.8637003000750187,
+    "slope": 0.9999999999999993,
+    "intercept": NaN,
+    "coef": {},
+    "n": 21328,
+    "cost": 4,
+    "all_swing": true,
+    "by_stand": true,
+    "stand_models": {
+     "R": {
+      "coef": {
+       "icpt_x_body": 0.7456833281715727,
+       "icpt_y": 0.45266885990493283,
+       "attack_direction": 0.16275997763287364,
+       "bat_speed": -0.02994640224621205,
+       "along_bat_from_com": -0.5457285785428381,
+       "icpt_y_over_ballspeed": -0.311727312406963,
+       "bz_icpt": 3.0074295438768193,
+       "bx_icpt": 4.914048688167198,
+       "bz_minus_zone_mid": -0.3593462447361792
+      },
+      "intercept": -19.96420736114311
+     },
+     "L": {
+      "coef": {
+       "icpt_x_body": 0.8242425065844727,
+       "icpt_y": 0.33187387955378045,
+       "attack_direction": 0.12615192775668277,
+       "bat_speed": 0.025453560194693844,
+       "along_bat_from_com": -0.5699122396773878,
+       "icpt_y_over_ballspeed": -0.227486382681038,
+       "bz_icpt": -0.6679912889866898,
+       "bx_icpt": -4.554510026275527,
+       "bz_minus_zone_mid": -0.026480579848194775
+      },
+      "intercept": -14.828565063781909
+     }
+    },
+    "n_features": 9
+   }
+  },
+  "y": {
+   "status": "recovered",
+   "best": {
+    "name": "icpt_y_over_ballspeed",
+    "axis": "y",
+    "r2": 0.9506819913299569,
+    "label_agreement": 0.9144317329332333,
+    "slope": 1.0000000000000002,
+    "intercept": NaN,
+    "coef": {},
+    "n": 21328,
+    "cost": 1,
+    "all_swing": true,
+    "by_stand": true,
+    "stand_models": {
+     "R": {
+      "coef": {
+       "icpt_y_over_ballspeed": 0.9235093592055167
+      },
+      "intercept": -17.918413523829468
+     },
+     "L": {
+      "coef": {
+       "icpt_y_over_ballspeed": 0.9106727948752966
+      },
+      "intercept": -18.343601678682262
+     }
+    },
+    "n_features": 1
+   }
+  },
+  "z": {
+   "status": "fallback",
+   "best": {
+    "name": "z_miss_decomp",
+    "axis": "z",
+    "r2": 0.6650566515579768,
+    "label_agreement": 0.7081301575393848,
+    "slope": 0.9999999999999996,
+    "intercept": NaN,
+    "coef": {},
+    "n": 21328,
+    "cost": 4,
+    "all_swing": false,
+    "by_stand": true,
+    "stand_models": {
+     "R": {
+      "coef": {
+       "z_from_miss": 0.23552453496119902,
+       "z_above_plane": 0.0261048718086985,
+       "attack_minus_descent": -0.05964797940717739,
+       "bz_minus_zone_mid": 0.13626729291727852,
+       "descent_deg": 0.6761367650919003,
+       "miss_distance": -0.3426487645630874
+      },
+      "intercept": 6.008028559249357
+     },
+     "L": {
+      "coef": {
+       "z_from_miss": 0.521637220623287,
+       "z_above_plane": 0.030994662448862953,
+       "attack_minus_descent": -0.08183736811355585,
+       "bz_minus_zone_mid": 0.1817028653754215,
+       "descent_deg": 0.4237692703586434,
+       "miss_distance": -0.6737851227383489
+      },
+      "intercept": 4.9161349601764535
+     }
+    },
+    "n_features": 6
+   }
+  }
+ },
+ "ladder": [
+  {
+   "axis": "x",
+   "candidate": "icpt_x_body_by_stand",
+   "cost": 1,
+   "n_features": 1,
+   "n": 21328,
+   "r2": 0.298,
+   "label_agreement": 0.724,
+   "slope": 1.0,
+   "all_swing": true,
+   "chosen": false,
+   "status": "fallback"
+  },
+  {
+   "axis": "x",
+   "candidate": "icpt_x_body",
+   "cost": 1,
+   "n_features": 1,
+   "n": 21328,
+   "r2": 0.296,
+   "label_agreement": 0.724,
+   "slope": 0.614,
+   "all_swing": true,
+   "chosen": false,
+   "status": "fallback"
+  },
+  {
+   "axis": "x",
+   "candidate": "icpt_x_field",
+   "cost": 1,
+   "n_features": 1,
+   "n": 21328,
+   "r2": 0.022,
+   "label_agreement": 0.724,
+   "slope": 0.041,
+   "all_swing": true,
+   "chosen": false,
+   "status": "fallback"
+  },
+  {
+   "axis": "x",
+   "candidate": "icpt_xy_body",
+   "cost": 2,
+   "n_features": 2,
+   "n": 21328,
+   "r2": 0.457,
+   "label_agreement": 0.77,
+   "slope": 1.0,
+   "all_swing": true,
+   "chosen": false,
+   "status": "fallback"
+  },
+  {
+   "axis": "x",
+   "candidate": "ball_lateral_at_icpt",
+   "cost": 2,
+   "n_features": 3,
+   "n": 21328,
+   "r2": 0.306,
+   "label_agreement": 0.729,
+   "slope": 1.0,
+   "all_swing": true,
+   "chosen": false,
+   "status": "fallback"
+  },
+  {
+   "axis": "x",
+   "candidate": "along_bat_from_com",
+   "cost": 3,
+   "n_features": 1,
+   "n": 21328,
+   "r2": 0.06,
+   "label_agreement": 0.716,
+   "slope": 1.0,
+   "all_swing": true,
+   "chosen": false,
+   "status": "fallback"
+  },
+  {
+   "axis": "x",
+   "candidate": "along_bat_plus_icpt",
+   "cost": 3,
+   "n_features": 4,
+   "n": 21328,
+   "r2": 0.69,
+   "label_agreement": 0.866,
+   "slope": 1.0,
+   "all_swing": true,
+   "chosen": false,
+   "status": "fallback"
+  },
+  {
+   "axis": "x",
+   "candidate": "x_full_geometry",
+   "cost": 4,
+   "n_features": 9,
+   "n": 21328,
+   "r2": 0.712,
+   "label_agreement": 0.864,
+   "slope": 1.0,
+   "all_swing": true,
+   "chosen": true,
+   "status": "fallback"
+  },
+  {
+   "axis": "y",
+   "candidate": "icpt_y_over_ballspeed",
+   "cost": 1,
+   "n_features": 1,
+   "n": 21328,
+   "r2": 0.951,
+   "label_agreement": 0.914,
+   "slope": 1.0,
+   "all_swing": true,
+   "chosen": true,
+   "status": "recovered"
+  },
+  {
+   "axis": "y",
+   "candidate": "icpt_y_by_stand",
+   "cost": 1,
+   "n_features": 1,
+   "n": 21328,
+   "r2": 0.95,
+   "label_agreement": 0.916,
+   "slope": 1.0,
+   "all_swing": true,
+   "chosen": false,
+   "status": "recovered"
+  },
+  {
+   "axis": "y",
+   "candidate": "icpt_y_raw",
+   "cost": 1,
+   "n_features": 1,
+   "n": 21328,
+   "r2": 0.949,
+   "label_agreement": 0.915,
+   "slope": 0.699,
+   "all_swing": true,
+   "chosen": false,
+   "status": "recovered"
+  },
+  {
+   "axis": "y",
+   "candidate": "attack_direction",
+   "cost": 2,
+   "n_features": 1,
+   "n": 21328,
+   "r2": 0.902,
+   "label_agreement": 0.891,
+   "slope": 1.0,
+   "all_swing": true,
+   "chosen": false,
+   "status": "recovered"
+  },
+  {
+   "axis": "y",
+   "candidate": "icpt_y_and_x",
+   "cost": 2,
+   "n_features": 2,
+   "n": 21328,
+   "r2": 0.968,
+   "label_agreement": 0.94,
+   "slope": 1.0,
+   "all_swing": true,
+   "chosen": false,
+   "status": "recovered"
+  },
+  {
+   "axis": "y",
+   "candidate": "icpt_y_attack_dir",
+   "cost": 2,
+   "n_features": 2,
+   "n": 21328,
+   "r2": 0.952,
+   "label_agreement": 0.918,
+   "slope": 1.0,
+   "all_swing": true,
+   "chosen": false,
+   "status": "recovered"
+  },
+  {
+   "axis": "y",
+   "candidate": "icpt_y_attack_dir_x",
+   "cost": 2,
+   "n_features": 4,
+   "n": 21328,
+   "r2": 0.977,
+   "label_agreement": 0.947,
+   "slope": 1.0,
+   "all_swing": true,
+   "chosen": false,
+   "status": "recovered"
+  },
+  {
+   "axis": "y",
+   "candidate": "time_based",
+   "cost": 3,
+   "n_features": 4,
+   "n": 21328,
+   "r2": 0.977,
+   "label_agreement": 0.947,
+   "slope": 1.0,
+   "all_swing": true,
+   "chosen": false,
+   "status": "recovered"
+  },
+  {
+   "axis": "z",
+   "candidate": "attack_minus_descent",
+   "cost": 1,
+   "n_features": 1,
+   "n": 21328,
+   "r2": 0.2,
+   "label_agreement": 0.498,
+   "slope": -0.147,
+   "all_swing": true,
+   "chosen": false,
+   "status": "fallback"
+  },
+  {
+   "axis": "z",
+   "candidate": "z_above_plane",
+   "cost": 1,
+   "n_features": 1,
+   "n": 21328,
+   "r2": 0.016,
+   "label_agreement": 0.392,
+   "slope": -0.07,
+   "all_swing": true,
+   "chosen": false,
+   "status": "fallback"
+  },
+  {
+   "axis": "z",
+   "candidate": "bz_icpt_and_plane",
+   "cost": 2,
+   "n_features": 4,
+   "n": 21328,
+   "r2": 0.561,
+   "label_agreement": 0.682,
+   "slope": 1.0,
+   "all_swing": true,
+   "chosen": false,
+   "status": "fallback"
+  },
+  {
+   "axis": "z",
+   "candidate": "z_plane_and_tilt",
+   "cost": 2,
+   "n_features": 4,
+   "n": 21328,
+   "r2": 0.321,
+   "label_agreement": 0.594,
+   "slope": 1.0,
+   "all_swing": true,
+   "chosen": false,
+   "status": "fallback"
+  },
+  {
+   "axis": "z",
+   "candidate": "z_with_miss",
+   "cost": 3,
+   "n_features": 3,
+   "n": 21328,
+   "r2": 0.471,
+   "label_agreement": 0.594,
+   "slope": 1.0,
+   "all_swing": false,
+   "chosen": false,
+   "status": "fallback"
+  },
+  {
+   "axis": "z",
+   "candidate": "z_miss_decomp",
+   "cost": 4,
+   "n_features": 6,
+   "n": 21328,
+   "r2": 0.665,
+   "label_agreement": 0.708,
+   "slope": 1.0,
+   "all_swing": false,
+   "chosen": true,
+   "status": "fallback"
+  },
+  {
+   "axis": "z",
+   "candidate": "z_zone_relative",
+   "cost": 4,
+   "n_features": 7,
+   "n": 21328,
+   "r2": 0.591,
+   "label_agreement": 0.694,
+   "slope": 1.0,
+   "all_swing": true,
+   "chosen": false,
+   "status": "fallback"
+  }
+ ]
+}
