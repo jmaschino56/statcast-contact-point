@@ -208,6 +208,67 @@ def rate_scatter(ours: pd.DataFrame, sav: pd.DataFrame, rate: str, out_png: Path
     return out_png
 
 
+# A 34 in MLB bat with its sweet spot 6 in from the barrel end, which is where
+# exit velocity actually peaks: 100.3 mph at x = +0.5, falling to 87 by +/-2.5
+# and 75 by +/-6 (2025 balls in play). So the tip sits at x = +6 and the knob at
+# x = -28, and the drawing is to scale on the x axis.
+#
+# It is worth knowing what the overlay reveals rather than hides: x is NOT
+# symmetric. Nothing reaches the knob (0.0 percent of swings below -28, and the
+# 1st percentile is only -8.5), while 8.6 percent of balls in play and 32.8
+# percent of whiffs land PAST the tip. Contact cannot work further down than the
+# hands, but a swing can miss by any distance off the end, which is what the
+# flail tail is.
+BAT_TIP_X, BAT_LENGTH = 6.0, 34.0
+# Geometry of the reserved strip, in axes fractions, named so the drawing and
+# the test that checks it cannot drift apart. HEADROOM is added above the data's
+# own range; everything else is measured in the axes AFTER that expansion.
+BAT_HEADROOM, BAT_Y, BAT_HALF, BAT_TEXT_Y = 0.22, 0.945, 0.046, 0.862
+_BAT_PROFILE = (        # (inches from the knob end, radius in inches)
+    (0.00, 0.10), (0.10, 0.80), (0.55, 0.98), (1.05, 0.90), (1.45, 0.58),
+    (2.20, 0.48), (9.00, 0.46), (13.0, 0.50), (16.5, 0.62), (19.5, 0.85),
+    (22.5, 1.12), (25.5, 1.27), (31.0, 1.30), (32.8, 1.26), (33.5, 1.12),
+    (34.0, 0.10),
+)
+
+
+def bat_outline(n: int = 600):
+    """(x along the bat, half thickness in inches) for one bat silhouette."""
+    s_pts = np.array([p[0] for p in _BAT_PROFILE], float)
+    r_pts = np.array([p[1] for p in _BAT_PROFILE], float)
+    s = np.linspace(0.0, BAT_LENGTH, n)
+    r = np.interp(s, s_pts, r_pts)
+    return s - (BAT_LENGTH - BAT_TIP_X), r
+
+
+def draw_bat(ax, y_frac=BAT_Y, max_half=BAT_HALF, color="#6f6558", alpha=0.85,
+             label=True):
+    """Lay a to-scale bat along the x axis, in a reserved strip of the panel.
+
+    x is in DATA units so the bat lines up with the axis it describes; the
+    vertical is in AXES fractions, because the other axis is milliseconds or
+    inches-above-plane and a bat has no thickness in either.
+    """
+    from matplotlib.patches import Polygon
+    x, r = bat_outline()
+    k = max_half / r.max()
+    pts = np.concatenate([np.column_stack([x, y_frac + r * k]),
+                          np.column_stack([x[::-1], y_frac - r[::-1] * k])])
+    ax.add_patch(Polygon(pts, closed=True, facecolor=color, edgecolor="#4a4339",
+                         lw=0.6, alpha=alpha, zorder=6,
+                         transform=ax.get_xaxis_transform(), clip_on=True))
+    ax.plot([0, 0], [y_frac - max_half * 1.5, y_frac + max_half * 1.5],
+            color="#4a4339", lw=0.9, alpha=0.9, zorder=7,
+            transform=ax.get_xaxis_transform(), clip_on=True)
+    if label:
+        ax.text(x.min(), BAT_TEXT_Y,
+                f"{BAT_LENGTH:.0f} in bat to scale; the tick is the sweet spot, "
+                f"the tip ends at {BAT_TIP_X:+.0f}",
+                fontsize=7.5, color="#6f6558", ha="left", va="top", zorder=7,
+                transform=ax.get_xaxis_transform(), clip_on=True)
+    return ax
+
+
 def _diverging_limits(vals, vcenter=0.0, weights=None, keep=1.0):
     """Where the colormap puts its white, and how far each half reaches.
 
@@ -297,7 +358,7 @@ def _bulk_extent(v: np.ndarray, axis: str, keep=0.998):
 
 
 def hexbin(cal, df, axes=("x", "y"), value="delta_run_exp", min_n=50, title=None,
-           ax=None, gridsize=34, vmax=None, vcenter=0.0, cbar=True):
+           ax=None, gridsize=34, vmax=None, vcenter=0.0, cbar=True, bat=True):
     """Mean of `value` over hexagonal cells of the reconstructed plane.
 
     Hexagons rather than the Savant rectangles because these panels are a
@@ -318,6 +379,14 @@ def hexbin(cal, df, axes=("x", "y"), value="delta_run_exp", min_n=50, title=None
     c = df[value].to_numpy(float)
     ok = np.isfinite(x) & np.isfinite(y) & np.isfinite(c)
     ex, ey = _bulk_extent(x[ok], a), _bulk_extent(y[ok], b)
+    if bat and a == "x" and ex is not None:
+        # Hold the whole bat, knob included, or the silhouette is a cone with
+        # its handle off the page. gridsize rises with the widened extent so the
+        # hexagons over the data stay the size they were.
+        wide = min(ex[0], -(BAT_LENGTH - BAT_TIP_X) - 1.5)
+        if wide < ex[0]:
+            gridsize = int(round(gridsize * (ex[1] - wide) / (ex[1] - ex[0])))
+            ex = (wide, ex[1])
     if ok.sum() < min_n or ex is None or ey is None:
         ax.set_title(title or "")
         ax.text(0.5, 0.5, "no cell reached the minimum count", ha="center", va="center",
@@ -339,6 +408,12 @@ def hexbin(cal, df, axes=("x", "y"), value="delta_run_exp", min_n=50, title=None
         ax.axhline(t, color=INK, lw=0.9, ls="--", alpha=0.8, zorder=3)
     ax.set_xlim(*ex)
     ax.set_ylim(*ey)
+    if bat and a == "x":
+        # Open headroom at the top and put the bat in it, so the silhouette
+        # never sits on top of a hexagon it is supposed to explain.
+        span = ey[1] - ey[0]
+        ax.set_ylim(ey[0], ey[1] + BAT_HEADROOM * span)
+        draw_bat(ax)
     ax.set_xlabel(AXIS_LABEL[a], fontsize=9, color=INK)
     ax.set_ylabel(AXIS_LABEL[b], fontsize=9, color=INK)
     if title:
@@ -351,11 +426,16 @@ def hexbin(cal, df, axes=("x", "y"), value="delta_run_exp", min_n=50, title=None
 
 
 def hexbin_grid(cal, df, value, out_png: Path, title: str, min_n=50, gridsize=34,
-                vcenter=0.0) -> Path:
-    fig, axs = plt.subplots(1, 3, figsize=(20, 6))
+                vcenter=0.0, bat=True) -> Path:
+    # The two x panels carry a whole 34 in bat plus the flail tail, about 53 in
+    # of range against 50 ms on the third, so they get more width or their
+    # hexagons come out squeezed next to it.
+    ratios = [1.3, 1.3, 1.0] if bat else [1, 1, 1]
+    fig, axs = plt.subplots(1, 3, figsize=(22, 6),
+                            gridspec_kw={"width_ratios": ratios})
     for ax, pair in zip(axs, (("x", "y"), ("x", "z"), ("y", "z"))):
         hexbin(cal, df, pair, value, min_n=min_n, ax=ax, gridsize=gridsize,
-               vcenter=vcenter)
+               vcenter=vcenter, bat=bat)
     fig.suptitle(title, fontsize=13, color=INK)
     fig.tight_layout()
     out_png = Path(out_png)

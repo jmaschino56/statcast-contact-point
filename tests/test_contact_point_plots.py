@@ -508,3 +508,75 @@ def test_cells3d_and_hexbin_agree_about_where_the_z_ridge_is():
     prof = g.groupby("bz").apply(lambda t: np.average(t["mean"], weights=t["n"]))
     peak = float(prof.idxmax())
     assert peak == 0.5, f"the peak landed at {peak}, expected +0.5"
+
+
+def test_the_bat_is_drawn_to_the_x_scale():
+    """x is inches along the bat, so the overlay has to share its units."""
+    x, r = plots.bat_outline()
+    assert abs(x.max() - plots.BAT_TIP_X) < 1e-9, "the tip is not at x = +6"
+    assert abs((x.max() - x.min()) - plots.BAT_LENGTH) < 1e-9, "not 34 in long"
+    assert abs(x.min() + 28.0) < 1e-9, "the knob is not at x = -28"
+    assert 1.2 < r.max() < 1.35, f"barrel radius {r.max()} is not a legal bat"
+    handle = r[(x > -25) & (x < -18)]
+    assert handle.max() < 0.6, "the handle is as thick as the barrel"
+
+
+def test_a_bat_panel_widens_its_x_range_to_hold_the_whole_bat():
+    """Without this the handle runs off the page and it reads as a cone."""
+    import matplotlib.pyplot as plt
+    cal, df = _fake(n=20000, seed=41)
+    fig, ax = plt.subplots()
+    plots.hexbin(cal, df, ("x", "y"), "delta_run_exp", min_n=5, ax=ax, cbar=False)
+    assert ax.get_xlim()[0] <= -28.0, ax.get_xlim()
+    plt.close(fig)
+
+    fig, ax = plt.subplots()
+    plots.hexbin(cal, df, ("x", "y"), "delta_run_exp", min_n=5, ax=ax, cbar=False,
+                 bat=False)
+    assert ax.get_xlim()[0] > -28.0, "bat=False still widened the range"
+    plt.close(fig)
+
+
+def test_the_bat_is_drawn_only_where_x_is_an_axis():
+    from matplotlib.patches import Polygon
+    import matplotlib.pyplot as plt
+    cal, df = _fake(n=20000, seed=42)
+    counts = {}
+    for pair in (("x", "y"), ("x", "z"), ("y", "z")):
+        fig, ax = plt.subplots()
+        plots.hexbin(cal, df, pair, "delta_run_exp", min_n=5, ax=ax, cbar=False)
+        counts[pair] = sum(isinstance(p, Polygon) for p in ax.patches)
+        plt.close(fig)
+    assert counts[("x", "y")] == 1 and counts[("x", "z")] == 1, counts
+    assert counts[("y", "z")] == 0, "a bat was drawn on the timing/plane panel"
+
+
+def test_the_bat_strip_clears_the_data_for_any_dataset():
+    """The silhouette sits in headroom opened above the data, never on it.
+
+    Asserted against the GEOMETRY, not against a fixture. The data can reach at
+    most 1/(1 + headroom) of the axes, because the axes are the data's own
+    extent expanded by that fraction. A fixture whose points fall short of its
+    extent will clear a strip that real data would collide with, which is how
+    the first version of this test passed with the headroom cut to 0.10.
+    """
+    ceiling = 1.0 / (1.0 + plots.BAT_HEADROOM)
+    bat_bottom = plots.BAT_Y - plots.BAT_HALF * 1.5
+    caption_bottom = plots.BAT_TEXT_Y - 0.025
+    assert bat_bottom > ceiling, ("bat can sit on the data", bat_bottom, ceiling)
+    assert caption_bottom > ceiling, ("caption can sit on the data",
+                                      caption_bottom, ceiling)
+    assert plots.BAT_TEXT_Y < plots.BAT_Y - plots.BAT_HALF, "caption overlaps the bat"
+    assert plots.BAT_Y + plots.BAT_HALF < 1.0, "the bat runs off the top of the panel"
+
+
+def test_the_bat_strip_is_above_the_drawn_hexagons():
+    import matplotlib.pyplot as plt
+    cal, df = _fake(n=20000, seed=43)
+    fig, ax = plt.subplots()
+    plots.hexbin(cal, df, ("x", "y"), "delta_run_exp", min_n=5, ax=ax, cbar=False)
+    hb = [c for c in ax.collections if hasattr(c, "get_offsets")][0]
+    lo, hi = ax.get_ylim()
+    top_frac = (float(np.max(hb.get_offsets()[:, 1])) - lo) / (hi - lo)
+    assert plots.BAT_TEXT_Y - 0.025 > top_frac, (plots.BAT_TEXT_Y, top_frac)
+    plt.close(fig)

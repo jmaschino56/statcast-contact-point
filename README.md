@@ -32,6 +32,18 @@ Tied up is negative for all 1,826 of Savant's own tail rows under both hands,
 because it measures handle against tip along the bat and does not care which
 side of the plate the batter stands on.
 
+Because x is inches along the bat, the panels carry a 34 inch bat drawn to the
+same scale, with its sweet spot at zero. That is where exit velocity actually
+peaks: 100.3 mph at x = +0.5, falling to 87 by 2.5 inches either way and 75 by
+6. The tip lands at +6 and the knob at -28.
+
+The overlay earns its space by showing that x is not symmetric. Nothing reaches
+the knob, with 0.0% of swings below -28 and a 1st percentile of only -8.5, while
+8.6% of balls in play and 32.8% of whiffs land past the tip. Contact cannot work
+further down the bat than the hands, but a swing can miss by any distance off
+the end, and that is the entire flail tail. The empty half of the panel is the
+finding, not wasted space.
+
 The best contact on balls in play is made about three quarters of an inch UNDER
 the ball, not over it, and the gap is not close: one inch under is worth .584 in
 expected wOBA against .179 one inch over. Launch angle is the mechanism and it
