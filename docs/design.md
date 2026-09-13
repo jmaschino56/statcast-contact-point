@@ -109,7 +109,7 @@ explicit y, never read from the plate columns, so 2026 behaves like 2024 and 202
 
 ### The Driveline deck (Saberseminar 2026, Pelletier / Ehrlich / Stokey)
 
-Read in full (61 image slides, `docs/superpowers/research/bat_path_saberseminar.pptx`).
+Read in full (61 image slides). The deck is not redistributed here.
 Relevant content, all from Stage 4:
 - They invert a bat-ball collision model built on Nava Wolfish's public model plus
   Alan Nathan's work so that exit velocity and launch angle map back to X = inches
