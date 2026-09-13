@@ -119,6 +119,33 @@ Split by contact type, all eight published cells land within 0.003 of Savant.
 The holdout seasons do not sag against the fit season, which is the test that
 matters.
 
+**An MAE means nothing without the null it beats.** The benchmark is predicting
+the league average rate for every player, which is what a reader should compare
+against, and it is 0.047 in every season for both perspectives because Savant's
+rates have the same spread each year.
+
+| season | perspective | null MAE | this MAE | error cut | MAE in SD |
+|---|---|---|---|---|---|
+| 2024 | pitcher | 0.0475 | 0.0203 | 57.2% | 0.34 |
+| 2025 | pitcher | 0.0474 | 0.0205 | 56.8% | 0.35 |
+| 2026 | pitcher | 0.0468 | 0.0209 | 55.4% | 0.35 |
+| 2024 | batter | 0.0478 | 0.0369 | 22.8% | 0.62 |
+| 2025 | batter | 0.0474 | 0.0359 | 24.3% | 0.60 |
+| 2026 | batter | 0.0482 | 0.0369 | 23.4% | 0.60 |
+
+Savant's pitcher rates run 0.563 to 0.722 from the 10th to the 90th percentile,
+an SD near 0.058, so the pitcher error is about a third of one SD and carries
+77% of the between-pitcher variance. The batter side is the honest weak half: a
+23% cut over guessing the average, and 0.60 SD, means most of a given batter's
+deviation from league average is still missed.
+
+There is no sampling noise floor here, and it is an inviting mistake. The
+binomial standard error on Savant's own published pitcher rates is 0.0200, which
+sits almost exactly on this MAE and looks like a floor. It is not one: these are
+the SAME swings Savant classified, with a denominator matched to 0.2% median per
+pitcher, so a perfect reconstruction would score 0.0000. A floor would only
+apply when comparing two independent samples of the same player.
+
 Timing is the only axis recovered outright. The contact point (x) reaches
 r-squared 0.712 and the swing plane (z) 0.665, both modeled rather than derived,
 because Statcast publishes the intercept point's lateral offset and depth but
