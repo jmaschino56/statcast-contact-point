@@ -174,12 +174,16 @@ def _ols(x: pd.Series, y: pd.Series):
     return float(slope), float(intercept)
 
 
-def rate_scatter(ours: pd.DataFrame, sav: pd.DataFrame, rate: str, out_png: Path,
-                 min_swings=100) -> Path:
+def _rate_panel(ax, ours: pd.DataFrame, sav: pd.DataFrame, rate: str, min_swings=100):
+    """One player-rate scatter against Savant's own. Shared by both callers.
+
+    Extracted so the single figure and the grid cannot drift apart: the slope
+    below 1 that this draws is a headline result, and two copies of the drawing
+    is two places for it to be computed differently.
+    """
     m = ours.merge(sav, on="id", suffixes=("_ours", "_sav"))
     swings = "n_swings_sav" if "n_swings_sav" in m else "n_swings"
     m = m[m[swings] >= min_swings]
-    fig, ax = plt.subplots(figsize=(6, 6))
     _dress(ax)
     ax.scatter(m[f"{rate}_sav"], m[f"{rate}_ours"], s=12, alpha=0.55, color=POS,
                edgecolors="none", zorder=3)
@@ -196,9 +200,16 @@ def rate_scatter(ours: pd.DataFrame, sav: pd.DataFrame, rate: str, out_png: Path
     r = m[f"{rate}_sav"].corr(m[f"{rate}_ours"])
     title = f"{rate}: r = {r:.3f}, n = {len(m)}"
     if slope is not None:
-        title += f", slope = {slope:.3f}"
+        title += f", slope {slope:.2f}"
     ax.set_title(title, fontsize=11, color=INK)
     ax.legend(frameon=False, fontsize=9)
+    return m
+
+
+def rate_scatter(ours: pd.DataFrame, sav: pd.DataFrame, rate: str, out_png: Path,
+                 min_swings=100) -> Path:
+    fig, ax = plt.subplots(figsize=(6, 6))
+    _rate_panel(ax, ours, sav, rate, min_swings)
     out_png = Path(out_png)
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
@@ -770,10 +781,58 @@ def league_bins_figure(table: pd.DataFrame, out_png: Path, min_n=100) -> Path:
     return out_png
 
 
-def tails_scatter(pred: dict, truth: dict, out_png: Path, caveat: str) -> Path:
-    """Our reconstructed value against Savant's, on the labeled whiff tails."""
-    fig, axs = plt.subplots(1, 3, figsize=(18, 6))
-    for ax, axis in zip(axs, ("x", "y", "z")):
+STATUS_NOTE = {"recovered": "recovered formula",
+               "fallback": "best linear candidate"}
+
+
+def tails_title(axis, status, r, n, slope=None):
+    """The panel title, as a pure function so a test can read it.
+
+    The status word is the whole point of the title: without it, a reader takes
+    the x panel's r for the same kind of claim as y's, and it is not. Pulled out
+    of the drawing so the wording is pinned by a test rather than by eye.
+    """
+    note = STATUS_NOTE.get(status, "")
+    t = (f"axis {axis}" + (f" ({note})" if note else "")
+         + f": r = {r:.3f}, r2 = {r * r:.3f}, n = {int(n)}")
+    return t + (f", slope {slope:.2f}" if slope is not None else "")
+
+
+def rate_scatter_grid(ours: pd.DataFrame, sav: pd.DataFrame, rates, out_png: Path,
+                      title: str, min_swings=100) -> Path:
+    """Every category rate on one figure, because one of three proves nothing.
+
+    A single scatter invites the reader to assume the other two look like it.
+    They do not: the three rates sit at different correlations, and a grid is
+    the only honest way to show that in one image.
+    """
+    rates = tuple(rates)
+    fig, axs = plt.subplots(1, len(rates), figsize=(6 * len(rates), 6.2), squeeze=False)
+    for ax, rate in zip(axs[0], rates):
+        _rate_panel(ax, ours, sav, rate, min_swings)
+    fig.suptitle(title, fontsize=13, color=INK)
+    fig.tight_layout()
+    out_png = Path(out_png)
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_png, dpi=DPI, facecolor="white", bbox_inches="tight")
+    plt.close(fig)
+    return out_png
+
+
+def tails_scatter(pred: dict, truth: dict, out_png: Path, caveat: str,
+                  axes=("x", "y", "z"), status=None) -> Path:
+    """Our reconstructed value against Savant's, on the labeled whiff tails.
+
+    `axes` picks which panels to draw, because the three do not carry the same
+    claim and are worth showing apart. `status` names that claim in the title:
+    y is a recovered formula that reproduces Savant, while x and z are the best
+    linear candidate against the tails and NOT what ships for contact swings,
+    which come from the collision inversion instead. Drawing them unlabelled
+    would read as if all three were the same kind of result.
+    """
+    axes = tuple(axes)
+    fig, axs = plt.subplots(1, len(axes), figsize=(6 * len(axes), 6), squeeze=False)
+    for ax, axis in zip(axs[0], axes):
         p, t = np.asarray(pred[axis], float), np.asarray(truth[axis], float)
         ok = np.isfinite(p) & np.isfinite(t)
         _dress(ax)
@@ -784,20 +843,26 @@ def tails_scatter(pred: dict, truth: dict, out_png: Path, caveat: str) -> Path:
             ax.plot([lo, hi], [lo, hi], color=INK, lw=1.0, zorder=4, label="perfect agreement")
             r = float(np.corrcoef(t[ok], p[ok])[0, 1])
             slope, intercept = _ols(pd.Series(t[ok]), pd.Series(p[ok]))
-            title = f"axis {axis}: r = {r:.3f}, n = {int(ok.sum())}"
+            title = tails_title(axis, (status or {}).get(axis), r, int(ok.sum()))
             if slope is not None:
                 ax.plot([lo, hi], [intercept + slope * lo, intercept + slope * hi],
                         color=NEG, lw=1.4, ls="--", zorder=5,
                         label=f"fit: slope {slope:.2f}")
-                title += f", slope = {slope:.3f}"
-            ax.set_title(title, fontsize=11, color=INK)
+                title = tails_title(axis, (status or {}).get(axis), r,
+                                    int(ok.sum()), slope)
+            ax.set_title(title, fontsize=10, color=INK)
             ax.legend(frameon=False, fontsize=9)
         ax.set_xlabel(f"Savant sav_{axis}", color=INK)
         ax.set_ylabel(f"ours {axis}_hat", color=INK)
-    fig.suptitle(caveat, fontsize=10, color=INK)
+    # Wrapped to the figure's own width and saved tight. A one-line caveat ran
+    # off both edges of the narrower one and two panel titles lost their slope,
+    # which is the kind of clipping that only shows up once the file is opened.
+    import textwrap
+    fig.suptitle("\n".join(textwrap.wrap(caveat, width=22 * len(axes) + 40)),
+                 fontsize=10, color=INK)
     fig.tight_layout()
     out_png = Path(out_png)
     out_png.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_png, dpi=150, facecolor="white")
+    fig.savefig(out_png, dpi=150, facecolor="white", bbox_inches="tight")
     plt.close(fig)
     return out_png

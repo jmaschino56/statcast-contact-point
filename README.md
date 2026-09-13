@@ -228,7 +228,7 @@ its tables and printed output while the PNGs ship separately in `figures/`.
 
 The scrape throttles to about one request per second and runs roughly 3,000
 requests per season, so budget an hour per season on the first run. Seven tests
-skip without the cached data; the other 127 run standalone.
+skip without the cached data; the other 131 run standalone.
 
 ## Limits
 

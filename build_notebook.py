@@ -430,15 +430,29 @@ print(f"\\ninversion rows past the curve's last published point: {int(_past)} "
 
 TAILS_CODE = '''# 6. The tails themselves: our value against Savant's, on the labeled whiffs.
 tf = traits.tails_features(FIT, Y_COM, TILT)
+# All three panels draw. Filtering to status == "recovered" left x and z blank,
+# which read as a broken figure rather than as the deliberate distinction it was.
+# The distinction is real and belongs in the TITLE: y is a recovered formula, and
+# x and z are the best linear candidate against the tails, not what ships for
+# contact swings, which come from the collision inversion instead.
 tl = pd.DataFrame({ax: discover.apply(
     discover.CandidateResult(**{k: v for k, v in disc["verdicts"][ax]["best"].items()}), tf)
-    for ax in ("x", "y", "z") if disc["verdicts"][ax]["status"] == "recovered"})
+    for ax in ("x", "y", "z")})
+status = {ax: disc["verdicts"][ax]["status"] for ax in ("x", "y", "z")}
 caveat = ("Savant's tails are the ten worst whiffs per list per player-season, selected on "
           "the label. This is the population the formulas were read off, and it is not a "
           "random sample of swings: agreement here is a form check, not a generalization check.")
 pred = {ax: (tl[ax] if ax in tl else np.full(len(tf), np.nan)) for ax in ("x", "y", "z")}
 truth = {ax: tf[f"sav_{ax}"].to_numpy() for ax in ("x", "y", "z")}
-p = plots.tails_scatter(pred, truth, FIGURES / "tails_scatter_2025.png", caveat)
+p = plots.tails_scatter(pred, truth, FIGURES / "tails_scatter_2025.png", caveat,
+                        status=status)
+print(p)
+display(Image(filename=str(p)))
+p = plots.tails_scatter(pred, truth, FIGURES / "tails_scatter_y_2025.png", caveat,
+                        axes=("y",), status=status)
+print(p)
+p = plots.tails_scatter(pred, truth, FIGURES / "tails_scatter_xz_2025.png", caveat,
+                        axes=("x", "z"), status=status)
 print(caveat)
 display(Image(filename=str(p)))
 '''
@@ -515,11 +529,18 @@ CLOUD_HTML = plots.cloud3d_html(
 print("interactive:", CLOUD_HTML)
 
 figs.append(plots.league_bins_figure(BINS_TABLE, FIGURES / "league_bins_2025.png"))
+RATES = ("on_time_percent", "centered_percent", "lined_up_percent")
 for kind in ("pitcher", "batter"):
     ours = validate.player_rates(DF[FIT], CATS[FIT], kind, CAL[FIT])
-    for rate in ("on_time_percent", "centered_percent", "lined_up_percent"):
-        figs.append(plots.rate_scatter(ours, validate.savant_rates(FIT, kind), rate,
+    sav = validate.savant_rates(FIT, kind)
+    for rate in RATES:
+        figs.append(plots.rate_scatter(ours, sav, rate,
                                        FIGURES / f"scatter_{kind}_{rate}.png"))
+    # All three on one figure: a single rate invites the reader to assume the
+    # other two look like it, and they sit at different correlations.
+    figs.append(plots.rate_scatter_grid(
+        ours, sav, RATES, FIGURES / f"scatter_grid_{kind}.png",
+        f"Per-{kind} category rates against Savant's leaderboard, {FIT}"))
 for p in figs:
     print(p)
     display(Image(filename=str(p)))

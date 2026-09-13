@@ -818,3 +818,67 @@ def test_each_savant_threshold_is_named_with_the_word_savant_uses():
             assert plots.MID_NAME[axis] in text, (a, b, axis, text)
             assert f"{plots.THRESH[axis]:g} {plots.AXIS_UNIT[axis]}" in text, (axis, text)
         plt.close(fig)
+
+
+def test_every_tails_panel_asked_for_actually_draws(tmp_path):
+    """Filtering to status == "recovered" shipped a 3-panel figure with 2 blank.
+
+    A blank panel reads as broken, not as the deliberate distinction it was.
+    The panel count follows `axes`, and every panel carries its points.
+    """
+    import matplotlib.pyplot as plt
+    rng = np.random.default_rng(7)
+    t = {a: rng.normal(0, 5, 400) for a in ("x", "y", "z")}
+    pred = {a: t[a] * 0.9 + rng.normal(0, 1, 400) for a in ("x", "y", "z")}
+    from PIL import Image
+    widths = {}
+    for axes in (("y",), ("x", "z"), ("x", "y", "z")):
+        before = plt.get_fignums()
+        out = plots.tails_scatter(pred, t, tmp_path / f"t{len(axes)}.png", "c",
+                                  axes=axes, status={a: "fallback" for a in axes})
+        assert out.exists() and out.stat().st_size > 5000, axes
+        assert plt.get_fignums() == before, "a figure was left open"
+        widths[len(axes)] = Image.open(out).size[0]
+    # The panel count is the thing under test, and only the drawn width shows
+    # it once the figure is closed. Each panel is the same 6 in wide, so the
+    # image width has to scale with the count. Asserting the file merely exists
+    # passes happily when `axes` is ignored and three panels are always drawn.
+    assert widths[1] < widths[2] < widths[3], widths
+    for n in (2, 3):
+        assert abs(widths[n] / widths[1] - n) < 0.25, (n, widths)
+
+
+def test_the_tails_title_says_which_claim_each_panel_makes():
+    """y is a recovered formula. x and z are the best linear candidate and are
+    NOT what ships for contact swings. Unlabelled, the reader reads one claim."""
+    rec = plots.tails_title("y", "recovered", 0.975, 21328, 0.951)
+    fall = plots.tails_title("x", "fallback", 0.844, 21328)
+    assert "recovered formula" in rec and "best linear candidate" in fall
+    assert "recovered" not in fall, "a modeled axis claimed a recovered formula"
+    assert "0.951" in rec and "r2 = 0.712" in fall, (rec, fall)
+    bare = plots.tails_title("x", None, 0.844, 10)
+    assert "(" not in bare, bare
+
+
+def test_the_rate_grid_and_the_single_scatter_share_one_drawing():
+    """Two copies of the drawing is two places for the slope to be computed
+    differently, and that slope below 1 is a headline result."""
+    import inspect
+    single = inspect.getsource(plots.rate_scatter)
+    grid = inspect.getsource(plots.rate_scatter_grid)
+    assert "_rate_panel" in single and "_rate_panel" in grid
+    assert "ax.scatter" not in single and "ax.scatter" not in grid
+
+
+def test_the_rate_grid_draws_one_panel_per_rate(tmp_path):
+    import matplotlib.pyplot as plt
+    rng = np.random.default_rng(11)
+    rates = ("on_time_percent", "centered_percent", "lined_up_percent")
+    ours = pd.DataFrame({"id": np.arange(300), "n_swings": 200,
+                         **{r: rng.uniform(0.4, 0.8, 300) for r in rates}})
+    sav = pd.DataFrame({"id": np.arange(300), "n_swings": 200,
+                        **{r: rng.uniform(0.4, 0.8, 300) for r in rates}})
+    before = plt.get_fignums()
+    out = plots.rate_scatter_grid(ours, sav, rates, tmp_path / "g.png", "t")
+    assert out.exists() and out.stat().st_size > 5000
+    assert plt.get_fignums() == before, "a figure was left open"
