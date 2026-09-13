@@ -55,7 +55,14 @@ def _grid(cal, df, axes, value, min_n):
 
 
 def heatmap(cal, df, axes=("x", "y"), value="delta_run_exp", min_n=50, title=None,
-            ax=None, vmax=None, cbar=True):
+            ax=None, vmax=None, vcenter=0.0, cbar=True):
+    """Mean of `value` over Savant's own rectangular bins.
+
+    `vcenter` is where the diverging colormap puts its white. Zero is right for
+    run value, which is signed about zero. Pass None for a quantity that is
+    not, such as xwOBA: every xwOBA sits between 0.1 and 0.9, so centring at
+    zero paints the whole panel in one half of the map and throws the red away.
+    """
     a, b = axes
     piv = _grid(cal, df, axes, value, min_n)
     ax = ax or plt.gca()
@@ -65,12 +72,14 @@ def heatmap(cal, df, axes=("x", "y"), value="delta_run_exp", min_n=50, title=Non
         ax.text(0.5, 0.5, "no cell reached the minimum count", ha="center", va="center",
                 transform=ax.transAxes, color=INK)
         return ax
-    lim = vmax or float(np.nanmax(np.abs(piv.to_numpy())))
-    lim = lim if lim > 0 else 0.1
+    centre, lo, hi = _diverging_limits(piv.to_numpy().ravel(), vcenter)
+    if vmax:
+        lo, hi = centre - vmax, centre + vmax
     x_edges = np.append(piv.columns.to_numpy(float), piv.columns.max() + BINS[a])
     y_edges = np.append(piv.index.to_numpy(float), piv.index.max() + BINS[b])
     m = ax.pcolormesh(x_edges, y_edges, np.ma.masked_invalid(piv.to_numpy()), cmap=CMAP,
-                      norm=TwoSlopeNorm(vcenter=0.0, vmin=-lim, vmax=lim), shading="flat")
+                      norm=TwoSlopeNorm(vcenter=centre, vmin=lo, vmax=hi),
+                      shading="flat")
     for t in (-THRESH[a], THRESH[a]):
         ax.axvline(t, color=INK, lw=0.9, ls="--", alpha=0.8)
     for t in (-THRESH[b], THRESH[b]):
@@ -86,10 +95,11 @@ def heatmap(cal, df, axes=("x", "y"), value="delta_run_exp", min_n=50, title=Non
     return ax
 
 
-def heatmap_grid(cal, df, value, out_png: Path, title: str, min_n=50) -> Path:
+def heatmap_grid(cal, df, value, out_png: Path, title: str, min_n=50,
+                 vcenter=0.0) -> Path:
     fig, axs = plt.subplots(1, 3, figsize=(20, 6))
     for ax, pair in zip(axs, (("x", "y"), ("x", "z"), ("y", "z"))):
-        heatmap(cal, df, pair, value, min_n=min_n, ax=ax)
+        heatmap(cal, df, pair, value, min_n=min_n, ax=ax, vcenter=vcenter)
     fig.suptitle(title, fontsize=13, color=INK)
     fig.tight_layout()
     out_png = Path(out_png)
@@ -148,6 +158,243 @@ def rate_scatter(ours: pd.DataFrame, sav: pd.DataFrame, rate: str, out_png: Path
     fig.savefig(out_png, dpi=150, facecolor="white")
     plt.close(fig)
     return out_png
+
+
+def _diverging_limits(vals, vcenter=0.0, weights=None, keep=1.0):
+    """Where the colormap puts its white, and how far each half reaches.
+
+    A signed quantity keeps `vcenter` at zero and a SYMMETRIC reach, so a cell
+    half a run better and one half a run worse get the same colour intensity.
+
+    An unsigned one passes vcenter=None. White then moves to the mean and each
+    half reaches only as far as the data does, because xwOBA lives between 0.00
+    and 0.92: a symmetric reach around a mean of 0.366 would run the red half
+    down to -0.18 and throw away a quarter of the colour range on values no
+    swing can produce.
+    """
+    vals = np.asarray(vals, float)
+    vals = vals[np.isfinite(vals)]
+    if vals.size == 0:
+        return (0.0 if vcenter is None else float(vcenter)), -0.1, 0.1
+    if vcenter is None:
+        centre = float(np.average(vals, weights=weights) if weights is not None
+                       else vals.mean())
+        edge = (1.0 - keep) / 2.0
+        lo, hi = ((float(vals.min()), float(vals.max())) if keep >= 1.0
+                  else tuple(float(q) for q in np.quantile(vals, [edge, 1.0 - edge])))
+        return centre, min(lo, centre - 1e-6), max(hi, centre + 1e-6)
+    centre = float(vcenter)
+    lim = float(np.max(np.abs(vals - centre))) or 0.1
+    return centre, centre - lim, centre + lim
+
+
+def _bulk_extent(v: np.ndarray, axis: str, keep=0.998):
+    """Axis limits holding the central mass, padded by one Savant bin.
+
+    The reconstructed axes have long thin tails (a swing can be scored 60
+    inches off the sweet spot). Letting them set the extent collapses the
+    hexagons that hold 99 percent of the swings into a smear.
+    """
+    v = v[np.isfinite(v)]
+    if v.size == 0:
+        return None
+    edge = (1.0 - keep) / 2.0
+    lo, hi = np.quantile(v, [edge, 1.0 - edge])
+    pad = BINS[axis]
+    return float(lo) - pad, float(hi) + pad
+
+
+def hexbin(cal, df, axes=("x", "y"), value="delta_run_exp", min_n=50, title=None,
+           ax=None, gridsize=34, vmax=None, vcenter=0.0, cbar=True):
+    """Mean of `value` over hexagonal cells of the reconstructed plane.
+
+    Hexagons rather than the Savant rectangles because these panels are a
+    surface to read, not a comparison against Savant's own binning. A hexagon
+    has six equidistant neighbours where a square has four plus four diagonals,
+    so a smooth surface reads as smooth instead of as a staircase, and the same
+    cell count covers the plane with less empty area.
+
+    `vcenter` is where the diverging colormap puts its white; None centres it on
+    the swing-weighted mean of `value`, which is what a quantity like xwOBA
+    needs and zero would waste half the colour range on.
+    """
+    a, b = axes
+    ax = ax or plt.gca()
+    _dress(ax)
+    x = cal[f"{a}_cal"].to_numpy(float)
+    y = cal[f"{b}_cal"].to_numpy(float)
+    c = df[value].to_numpy(float)
+    ok = np.isfinite(x) & np.isfinite(y) & np.isfinite(c)
+    ex, ey = _bulk_extent(x[ok], a), _bulk_extent(y[ok], b)
+    if ok.sum() < min_n or ex is None or ey is None:
+        ax.set_title(title or "")
+        ax.text(0.5, 0.5, "no cell reached the minimum count", ha="center", va="center",
+                transform=ax.transAxes, color=INK)
+        return ax
+    hb = ax.hexbin(x[ok], y[ok], C=c[ok], reduce_C_function=np.mean, mincnt=min_n,
+                   gridsize=gridsize, extent=(ex[0], ex[1], ey[0], ey[1]),
+                   cmap=CMAP, linewidths=0.0, zorder=2)
+    vals = hb.get_array()
+    vals = np.asarray(vals[np.isfinite(vals)], float)
+    if vals.size:
+        centre, lo, hi = _diverging_limits(vals, vcenter)
+        if vmax:
+            lo, hi = centre - vmax, centre + vmax
+        hb.set_norm(TwoSlopeNorm(vcenter=centre, vmin=lo, vmax=hi))
+    for t in (-THRESH[a], THRESH[a]):
+        ax.axvline(t, color=INK, lw=0.9, ls="--", alpha=0.8, zorder=3)
+    for t in (-THRESH[b], THRESH[b]):
+        ax.axhline(t, color=INK, lw=0.9, ls="--", alpha=0.8, zorder=3)
+    ax.set_xlim(*ex)
+    ax.set_ylim(*ey)
+    ax.set_xlabel(AXIS_LABEL[a], fontsize=9, color=INK)
+    ax.set_ylabel(AXIS_LABEL[b], fontsize=9, color=INK)
+    if title:
+        ax.set_title(title, fontsize=11, color=INK)
+    if cbar:
+        cb = plt.colorbar(hb, ax=ax)
+        cb.set_label(value, fontsize=9, color=INK)
+        cb.ax.tick_params(labelsize=8, colors=INK)
+    return ax
+
+
+def hexbin_grid(cal, df, value, out_png: Path, title: str, min_n=50, gridsize=34,
+                vcenter=0.0) -> Path:
+    fig, axs = plt.subplots(1, 3, figsize=(20, 6))
+    for ax, pair in zip(axs, (("x", "y"), ("x", "z"), ("y", "z"))):
+        hexbin(cal, df, pair, value, min_n=min_n, ax=ax, gridsize=gridsize,
+               vcenter=vcenter)
+    fig.suptitle(title, fontsize=13, color=INK)
+    fig.tight_layout()
+    out_png = Path(out_png)
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_png, dpi=DPI, facecolor="white")
+    plt.close(fig)
+    return out_png
+
+
+def cells3d(cal, df, value="estimated_woba_using_speedangle", min_n=25):
+    """Mean of `value` per (x, y, z) cell on Savant's own bin grid.
+
+    Returns bin centres, the mean, and the count, so the caller can decide how
+    to draw it. Shared by the static figure and the interactive one, which is
+    the point: two views of one table cannot disagree.
+    """
+    t = pd.DataFrame({"bx": to_bin("x", cal["x_cal"].to_numpy(float)),
+                      "by": to_bin("y", cal["y_cal"].to_numpy(float)),
+                      "bz": to_bin("z", cal["z_cal"].to_numpy(float)),
+                      "v": df[value].to_numpy(float)}).dropna()
+    if t.empty:
+        return pd.DataFrame(columns=["bx", "by", "bz", "mean", "n"])
+    g = t.groupby(["bx", "by", "bz"])["v"].agg(["mean", "size"]).reset_index()
+    g = g.rename(columns={"size": "n"})
+    return g[g["n"] >= min_n].reset_index(drop=True)
+
+
+def cloud3d(cal, df, out_png: Path, title: str,
+            value="estimated_woba_using_speedangle", min_n=25, keep=0.99,
+            vcenter=None) -> Path:
+    """The three axes at once, one marker per cell, coloured by `value`.
+
+    Four viewing angles, because a single static angle of a solid cloud hides
+    its own interior. Opacity rises with how far the cell sits from the league
+    mean, so the ordinary middle fades out and the structure is what remains.
+    """
+    from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+    g = cells3d(cal, df, value, min_n)
+    fig = plt.figure(figsize=(15, 11.5))
+    if g.empty:
+        ax = fig.add_subplot(111)
+        ax.text(0.5, 0.5, "no cell reached the minimum count", ha="center",
+                va="center", color=INK)
+        fig.savefig(out_png, dpi=DPI, facecolor="white")
+        plt.close(fig)
+        return Path(out_png)
+    centre, lo, hi = _diverging_limits(g["mean"], vcenter, weights=g["n"], keep=keep)
+    norm = TwoSlopeNorm(vcenter=centre, vmin=lo, vmax=hi)
+    reach = max(centre - lo, hi - centre)
+    dist = np.clip(np.abs(g["mean"] - centre) / reach, 0, 1)
+    # Alpha is baked into the face colours rather than passed as `alpha=`. A 3D
+    # collection re-pairs its alpha array against its EDGE colours too, and with
+    # edgecolors="none" that is 551 alphas against 0 colours, which raises.
+    rgba = CMAP(norm(g["mean"].to_numpy(float)))
+    rgba[:, 3] = 0.06 + 0.84 * dist ** 1.5
+    size = 8 + 42 * (g["n"] / g["n"].max()) ** 0.4
+    views = ((22, -60), (22, 30), (60, -45), (8, -90))
+    for i, (elev, azim) in enumerate(views, 1):
+        ax = fig.add_subplot(2, 2, i, projection="3d")
+        ax.scatter(g["bx"], g["by"], g["bz"], c=rgba, s=size, depthshade=False)
+        ax.set_xlabel("x: along the bat (in)", fontsize=8, color=INK, labelpad=1)
+        ax.set_ylabel("y: timing (ms)", fontsize=8, color=INK, labelpad=1)
+        ax.set_zlabel("z: above the plane (in)", fontsize=8, color=INK, labelpad=1)
+        ax.tick_params(labelsize=7, colors=INK)
+        ax.view_init(elev=elev, azim=azim)
+        ax.set_title(f"elev {elev}, azim {azim}", fontsize=9, color=INK)
+        ax.set_box_aspect((1, 1, 0.8))
+    # A 3D axes reserves a wide internal margin for its own tick labels, so the
+    # default spacing leaves four small cubes in a large empty figure.
+    fig.subplots_adjust(left=0.0, right=0.87, top=0.91, bottom=0.04,
+                        wspace=0.0, hspace=0.02)
+    # c=rgba leaves the scatter with no mappable, so the colorbar gets its own.
+    sm = plt.cm.ScalarMappable(norm=norm, cmap=CMAP)
+    sm.set_array([])
+    cb = fig.colorbar(sm, ax=fig.axes, shrink=0.5, pad=0.02, fraction=0.03)
+    cb.set_label(value, fontsize=9, color=INK)
+    cb.ax.tick_params(labelsize=8, colors=INK)
+    fig.suptitle(f"{title}\n{len(g):,} cells of at least {min_n} swings, "
+                 f"white at {centre:.3f}, opacity rises with distance from it",
+                 fontsize=12, color=INK)
+    out_png = Path(out_png)
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_png, dpi=DPI, facecolor="white")
+    plt.close(fig)
+    return out_png
+
+
+def cloud3d_html(cal, df, out_html: Path, title: str,
+                 value="estimated_woba_using_speedangle", min_n=25, keep=0.99,
+                 vcenter=None) -> Path:
+    """The same cells as cloud3d, rotatable, as one self-contained HTML file.
+
+    plotly.js is embedded rather than linked, so the page opens on a phone with
+    no internet at all. It costs about 3.5 MB, which is the price of the LAN
+    rule. Both this and the static figure read cells3d, so the two cannot
+    disagree about what is in a cell.
+    """
+    import plotly.graph_objects as go
+
+    g = cells3d(cal, df, value, min_n)
+    out_html = Path(out_html)
+    out_html.parent.mkdir(parents=True, exist_ok=True)
+    if g.empty:
+        out_html.write_text("<p>no cell reached the minimum count</p>", encoding="utf-8")
+        return out_html
+    centre, lo, hi = _diverging_limits(g["mean"], vcenter, weights=g["n"], keep=keep)
+    # plotly spaces a colorscale evenly over [cmin, cmax], so an asymmetric
+    # reach needs white placed at the fraction the centre actually sits at.
+    mid = (centre - lo) / (hi - lo) if hi > lo else 0.5
+    scale = [[0.0, NEG], [round(float(mid), 6), MID], [1.0, POS]]
+    size = 3 + 14 * (g["n"] / g["n"].max()) ** 0.4
+    hover = [f"x {bx:+.0f} in<br>y {by:+.0f} ms<br>z {bz:+.0f} in"
+             f"<br>{value} {m:.3f}<br>{int(n):,} swings"
+             for bx, by, bz, m, n in zip(g["bx"], g["by"], g["bz"], g["mean"], g["n"])]
+    fig = go.Figure(go.Scatter3d(
+        x=g["bx"], y=g["by"], z=g["bz"], mode="markers", text=hover, hoverinfo="text",
+        marker=dict(size=size, color=g["mean"], colorscale=scale,
+                    cmin=lo, cmax=hi, opacity=0.72,
+                    line=dict(width=0),
+                    colorbar=dict(title=dict(text=value, side="right"), thickness=14))))
+    fig.update_layout(
+        title=dict(text=f"{title}<br><sub>{len(g):,} cells of at least {min_n} swings, "
+                        f"white at the league mean {centre:.3f}, marker size is cell count"
+                        "</sub>"),
+        scene=dict(xaxis_title="x: along the bat (in)", yaxis_title="y: timing (ms)",
+                   zaxis_title="z: above the plane (in)",
+                   aspectmode="cube"),
+        paper_bgcolor="white", margin=dict(l=0, r=0, t=70, b=0), height=820)
+    fig.write_html(out_html, include_plotlyjs=True, full_html=True)
+    return out_html
 
 
 def _bulk_range(t: pd.DataFrame, axis: str, keep=0.999):

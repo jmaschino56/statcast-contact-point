@@ -1,3 +1,4 @@
+import re
 import sys
 from pathlib import Path
 
@@ -161,3 +162,129 @@ def test_every_notebook_code_cell_compiles():
         except SyntaxError as e:
             broken.append((i, str(e)))
     assert not broken, broken
+
+
+def test_diverging_limits_stays_symmetric_for_a_signed_quantity():
+    """Run value is signed about zero, so equal magnitudes must get equal colour."""
+    v = np.array([-0.4, -0.1, 0.0, 0.2, 0.9])
+    centre, lo, hi = plots._diverging_limits(v, 0.0)
+    assert centre == 0.0
+    assert lo == -hi
+    assert hi == 0.9
+
+
+def test_diverging_limits_never_reaches_past_an_unsigned_quantity():
+    """The shipped xwOBA heatmap centred a diverging map at zero.
+
+    Every xwOBA sits above zero, so the whole panel landed in the blue half and
+    the colourbar ran down to -0.8 where no swing can go. White belongs at the
+    mean and neither half may reach past the data.
+    """
+    v = np.array([0.10, 0.30, 0.35, 0.40, 0.92])
+    centre, lo, hi = plots._diverging_limits(v, None)
+    assert abs(centre - v.mean()) < 1e-9
+    assert lo == v.min() and hi == v.max()
+    assert lo > 0.0, "the red half reached past the smallest xwOBA that exists"
+
+
+def test_diverging_limits_weights_the_centre_by_cell_count():
+    v = np.array([0.2, 0.8])
+    plain, _, _ = plots._diverging_limits(v, None)
+    weighted, _, _ = plots._diverging_limits(v, None, weights=np.array([9.0, 1.0]))
+    assert abs(plain - 0.5) < 1e-9
+    assert abs(weighted - 0.26) < 1e-9
+
+
+def test_hexbin_puts_white_at_the_xwoba_mean_not_at_zero(tmp_path):
+    import matplotlib.pyplot as plt
+    cal, df = _fake()
+    fig, ax = plt.subplots()
+    plots.hexbin(cal, df, ("x", "y"), "estimated_woba_using_speedangle",
+                 min_n=5, ax=ax, vcenter=None, cbar=False)
+    hb = [c for c in ax.collections if hasattr(c, "get_offsets")][0]
+    norm = hb.norm
+    assert 0.3 < norm.vcenter < 0.7, f"white sat at {norm.vcenter}"
+    assert norm.vmin >= 0.0, f"the red half reached down to {norm.vmin}"
+    plt.close(fig)
+
+
+def test_hexbin_grid_writes_png(tmp_path):
+    cal, df = _fake()
+    out = plots.hexbin_grid(cal, df, "delta_run_exp", tmp_path / "hx.png", "test")
+    assert out.exists() and out.stat().st_size > 10_000
+
+
+def test_hexbin_grid_survives_nan_values(tmp_path):
+    cal, df = _fake()
+    cal.loc[cal.sample(frac=0.4, random_state=1).index, "z_cal"] = np.nan
+    df.loc[df.sample(frac=0.2, random_state=2).index, "delta_run_exp"] = np.nan
+    out = plots.hexbin_grid(cal, df, "delta_run_exp", tmp_path / "hx_nan.png", "nan")
+    assert out.exists() and out.stat().st_size > 10_000
+
+
+def test_cells3d_drops_cells_below_the_minimum_count():
+    cal, df = _fake(n=20000, seed=3)
+    g = plots.cells3d(cal, df, "estimated_woba_using_speedangle", min_n=25)
+    assert not g.empty
+    assert int(g["n"].min()) >= 25
+    loose = plots.cells3d(cal, df, "estimated_woba_using_speedangle", min_n=1)
+    assert len(loose) > len(g)
+
+
+def test_cells3d_lands_on_savants_bin_grid():
+    """The 3D cells must be the same cells the 2D panels and Savant use."""
+    from cp_lib.calibrate import to_bin
+    cal, df = _fake(n=20000, seed=4)
+    g = plots.cells3d(cal, df, "estimated_woba_using_speedangle", min_n=5)
+    for axis, col in (("x", "bx"), ("y", "by"), ("z", "bz")):
+        want = set(np.unique(to_bin(axis, cal[f"{axis}_cal"].to_numpy(float))))
+        assert set(g[col]) <= want, f"{axis} cells left Savant's grid"
+
+
+def test_cloud3d_writes_png(tmp_path):
+    """Also pins the RGBA path: a per-point alpha= array raises on a 3D scatter
+    whose edgecolors are 'none', because the alphas get paired with 0 colours."""
+    cal, df = _fake(n=20000, seed=5)
+    out = plots.cloud3d(cal, df, tmp_path / "cloud.png", "test",
+                        value="estimated_woba_using_speedangle", min_n=10)
+    assert out.exists() and out.stat().st_size > 50_000
+
+
+def test_cloud3d_survives_an_empty_cell_table(tmp_path):
+    cal, df = _fake(n=200, seed=6)
+    out = plots.cloud3d(cal, df, tmp_path / "empty.png", "test", min_n=10_000)
+    assert out.exists()
+
+
+def test_cloud3d_html_is_self_contained(tmp_path):
+    """LAN only: the page has to open on a phone with no internet at all."""
+    cal, df = _fake(n=20000, seed=7)
+    out = plots.cloud3d_html(cal, df, tmp_path / "cloud.html", "test",
+                             value="estimated_woba_using_speedangle", min_n=10)
+    html = out.read_text(encoding="utf-8")
+    assert out.stat().st_size > 1_000_000, "plotly.js was linked, not embedded"
+    assert "Plotly.newPlot" in html
+    assert '<script src="https://' not in html and "<script src='https://" not in html
+
+
+def test_cloud3d_html_places_white_at_the_centre_of_an_asymmetric_range(tmp_path):
+    """plotly spaces a colorscale evenly over [cmin, cmax].
+
+    With white pinned at 0.5 and an asymmetric reach the neutral colour lands
+    somewhere that is not the league mean, and the page disagrees with the PNG.
+    """
+    cal, df = _fake(n=20000, seed=8)
+    df["estimated_woba_using_speedangle"] = np.abs(
+        np.random.default_rng(9).normal(0.2, 0.3, len(df)))
+    out = plots.cloud3d_html(cal, df, tmp_path / "c.html", "t",
+                             value="estimated_woba_using_speedangle", min_n=10)
+    g = plots.cells3d(cal, df, "estimated_woba_using_speedangle", 10)
+    centre, lo, hi = plots._diverging_limits(g["mean"], None, weights=g["n"], keep=0.99)
+    want = (centre - lo) / (hi - lo)
+    assert abs(want - 0.5) > 0.02, "fixture is symmetric, the test proves nothing"
+    m = re.search(r'\[\[0(?:\.0)?,\s*"' + re.escape(plots.NEG)
+                  + r'"\],\s*\[([0-9.]+),\s*"' + re.escape(plots.MID) + r'"\]',
+                  out.read_text(encoding="utf-8"))
+    assert m, "could not find the diverging colorscale in the page"
+    assert abs(float(m.group(1)) - want) < 1e-3, (
+        f"white sits at {m.group(1)} of the range, the mean is at {want:.4f}")

@@ -13,7 +13,19 @@ them. Zero sits about 27 inches in front of the batter reference point. It is no
 a closest-approach quantity, not a bat-path quantity, and it carries no term for
 what happened to the pitch.
 
-![run value over the contact point](figures/heatmap_runvalue_all_swings.png)
+![run value over the contact point](figures/hexbin_runvalue_all_swings.png)
+
+Only one of the three z bands pays. A swing more than 2 inches off its own
+plane almost never puts the ball in play: 1.4% of "over" swings and 3.4% of
+"under" ones do, against 59% of lined-up swings. Run value per swing follows,
+at -0.095 over, +0.012 lined up and -0.080 under, on 313,326 swings in 2025.
+
+![expected wOBA over all three axes](figures/cloud3d_xwoba_in_play.png)
+
+Drawn against all three axes at once, the good contact is a tilted ridge rather
+than a point: a batter meeting the ball early can still square it by catching it
+at a different place along the bat. The 2D panels cannot show that, because each
+of them averages one axis away.
 
 Savant's [Swing Timing / Miss Distance leaderboard](https://baseballsavant.mlb.com/leaderboard/bat-tracking/swing-timing-miss-distance)
 scores every tracked swing on three axes and publishes only the season rates:
@@ -95,7 +107,7 @@ rate from 0.2346 to 0.2565 against Savant's published 0.2569.
 | `cp_lib/reconstruct.py` | the three routes above |
 | `cp_lib/calibrate.py` | the per contact type quantile maps |
 | `cp_lib/validate.py` | the scorecard against Savant's aggregates |
-| `cp_lib/plots.py` | heatmaps and validation figures |
+| `cp_lib/plots.py` | hexbins, the 3D cloud, and validation figures |
 | `contact_point.ipynb` | the executed notebook, all of the above end to end |
 | `figures/` | every figure the notebook produces |
 | `docs/design.md` | the design, including what is out of reach and why |
