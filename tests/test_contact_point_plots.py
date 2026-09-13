@@ -359,27 +359,37 @@ def test_every_panel_of_a_hexbin_grid_shares_one_scale(tmp_path):
     assert norms[0] == norms[1] == norms[2] == (0.0, 0.6, 1.2), norms
 
 
-def test_fade_keeps_the_unusual_and_drops_the_ordinary():
-    """The ridge must draw MORE opaque than the sea it sits in.
+def test_fade_rises_with_the_value_and_is_monotone():
+    """Opacity tracks the value itself, not distance from a centre.
 
-    Anchoring the fade on the fixed scale's white (0.600) instead of the data's
-    own centre inverted this: a 0.80 ridge sat 0.20 from white while a 0.30 sea
-    sat 0.30 from it, so the ordinary cells drew hardest.
+    A symmetric ramp made the worst cells as loud as the best and buried the
+    ridge inside an opaque shell of ordinary blue. The best cell must be fully
+    opaque and the worst nearly invisible.
     """
-    vals = np.concatenate([np.full(40, 0.80), np.full(360, 0.30)])
-    w = np.ones_like(vals)
-    alpha, centre = plots._fade(vals, weights=w)
-    assert 0.3 < centre < 0.45, f"anchor is not the data centre: {centre}"
-    assert alpha[:40].mean() > alpha[40:].mean(), (
-        f"the ridge drew fainter than the sea: {alpha[0]:.3f} vs {alpha[-1]:.3f}")
-    assert alpha.min() >= 0.10 and alpha.max() <= 0.90
+    vals = np.linspace(0.0, 1.0, 200)
+    alpha, u = plots._fade(vals)
+    assert np.all(np.diff(alpha) >= -1e-12), "opacity is not monotone in the value"
+    assert alpha[-1] > 0.95, f"the top of the data is not opaque: {alpha[-1]:.3f}"
+    assert alpha[0] < 0.10, f"the bottom of the data is not faint: {alpha[0]:.3f}"
+    assert u[0] == 0.0 and u[-1] == 1.0
 
 
-def test_fade_has_no_anchor_argument():
-    """The anchor is owned by _fade so a caller cannot pass a scale's white."""
+def test_fade_reaches_full_opacity_even_when_the_scale_leaves_headroom():
+    """xwOBA tops out near 0.92 on a bar drawn to 1.2.
+
+    Normalising opacity on the fixed scale would cap the reddest cell present
+    at about two thirds opaque, so it normalises on the data instead.
+    """
+    vals = np.linspace(0.05, 0.92, 300)
+    alpha, _ = plots._fade(vals)
+    assert alpha.max() > 0.95, alpha.max()
+
+
+def test_fade_takes_no_weights_or_anchor():
+    """Nothing about the fade can be steered by a caller's colour scale."""
     import inspect
     names = set(inspect.signature(plots._fade).parameters)
-    assert names == {"values", "weights", "keep", "floor", "span"}, names
+    assert names == {"values", "keep", "floor", "span", "power"}, names
 
 
 def test_cloud3d_renders_a_ridge_more_opaque_than_its_surroundings(tmp_path):
@@ -392,7 +402,7 @@ def test_cloud3d_renders_a_ridge_more_opaque_than_its_surroundings(tmp_path):
     g = plots.cells3d(cal, df, "estimated_woba_using_speedangle", 10)
     ridge = (g["mean"] > 0.7).to_numpy()
     assert ridge.any() and (~ridge).any(), "fixture lost its ridge"
-    alpha, _ = plots._fade(g["mean"], weights=g["n"])
+    alpha, _ = plots._fade(g["mean"])
     assert alpha[ridge].mean() > alpha[~ridge].mean()
     out = plots.cloud3d(cal, df, tmp_path / "c.png", "t",
                         value="estimated_woba_using_speedangle", min_n=10)
@@ -413,38 +423,32 @@ def test_the_interactive_page_uses_the_fixed_scale(tmp_path):
     assert (float(lo.group(1)), float(hi.group(1))) == (0.0, 1.2), (lo.group(1), hi.group(1))
 
 
-def test_only_z_is_flipped_for_display():
+def test_every_axis_is_drawn_on_savants_own_sign():
+    """No axis is negated, so a figure and a validation table cannot disagree."""
+    assert plots.DISPLAY_SIGN == {"x": 1.0, "y": 1.0, "z": 1.0}
     v = np.array([-3.0, 0.0, 2.0])
-    assert list(plots.to_display("x", v)) == [-3.0, 0.0, 2.0]
-    assert list(plots.to_display("y", v)) == [-3.0, 0.0, 2.0]
-    assert list(plots.to_display("z", v)) == [3.0, -0.0, -2.0]
+    for axis in ("x", "y", "z"):
+        assert list(plots.to_display(axis, v)) == [-3.0, 0.0, 2.0]
 
 
-def test_over_draws_positive_and_under_negative():
-    """Jeremy reads "over" as up.
+def test_under_is_the_positive_end_of_z_like_savant():
+    """Savant's number is the BALL's height, their word is what the BAT did.
 
-    Savant stores the BALL above the swing plane, so their over is negative
-    (avg_z_over = -3.78 in the 2025 league leaderboard). Every figure draws the
-    BAT above the ball instead, so over is positive. This pins the direction.
+    A ball above the swing plane means the bat passed under it, so "under" is
+    positive: their 2025 league page publishes avg_z_over = -3.78 and
+    avg_z_under = +2.99, and every one of their per-swing rows labelled Over
+    carries a negative value under both batter hands.
     """
-    from cp_lib.calibrate import THRESH
-    over_stored = np.array([-6.0, -3.0])     # Savant's sign: ball well below the plane
-    under_stored = np.array([3.0, 6.0])
-    assert (plots.to_display("z", over_stored) > THRESH["z"]).all()
-    assert (plots.to_display("z", under_stored) < -THRESH["z"]).all()
-    assert "under  |  lined up  |  over" in plots.AXIS_LABEL["z"]
+    assert "over  |  lined up  |  under" in plots.AXIS_LABEL["z"]
+    assert "ball above the swing plane" in plots.AXIS_LABEL["z"]
 
 
-def test_cells3d_z_is_drawn_on_the_flipped_sign():
+def test_cells3d_keeps_z_on_savants_sign():
     from cp_lib.calibrate import to_bin
     cal, df = _fake(n=20000, seed=31)
     g = plots.cells3d(cal, df, "estimated_woba_using_speedangle", min_n=5)
     stored = set(np.unique(to_bin("z", cal["z_cal"].to_numpy(float))))
-    assert set(g["bz"]) <= {-b for b in stored}
-    assert set(g["bz"]) & {b for b in stored if b > 0} or True  # symmetry is fine
-    # the decisive half: no drawn bz equals a stored bz of the same nonzero value
-    # unless its negation is also present
-    assert all((-b) in stored for b in g["bz"])
+    assert set(g["bz"]) <= stored
 
 
 def test_a_flipped_bin_still_contains_its_own_value():
@@ -457,23 +461,37 @@ def test_a_flipped_bin_still_contains_its_own_value():
     """
     from cp_lib.calibrate import to_bin, BINS
     rng = np.random.default_rng(5)
-    for axis in ("x", "y", "z"):
-        v = rng.normal(0, 5, 4000)
-        drawn = plots.to_display(axis, v)
-        label = to_bin(axis, drawn)
-        w = BINS[axis]
-        assert np.all(label <= drawn + 1e-9), axis
-        assert np.all(drawn < label + w + 1e-9), axis
+    # Production draws every axis unflipped, so force the negated branch here:
+    # the rule has to stay correct for whoever flips an axis next.
+    for sign in (1.0, -1.0):
+        for axis in ("x", "y", "z"):
+            saved = plots.DISPLAY_SIGN[axis]
+            plots.DISPLAY_SIGN[axis] = sign
+            try:
+                v = rng.normal(0, 5, 4000)
+                drawn = plots.to_display(axis, v)
+                label = to_bin(axis, drawn)
+                w = BINS[axis]
+                assert np.all(label <= drawn + 1e-9), (axis, sign)
+                assert np.all(drawn < label + w + 1e-9), (axis, sign)
+            finally:
+                plots.DISPLAY_SIGN[axis] = saved
 
 
 def test_to_display_bin_agrees_with_binning_the_flipped_value():
     from cp_lib.calibrate import to_bin
     rng = np.random.default_rng(6)
-    for axis in ("x", "y", "z"):
-        v = rng.normal(0, 5, 4000)
-        from_value = to_bin(axis, plots.to_display(axis, v))
-        from_label = plots.to_display_bin(axis, to_bin(axis, v))
-        assert np.allclose(from_value, from_label), axis
+    for sign in (1.0, -1.0):
+        for axis in ("x", "y", "z"):
+            saved = plots.DISPLAY_SIGN[axis]
+            plots.DISPLAY_SIGN[axis] = sign
+            try:
+                v = rng.normal(0, 5, 4000)
+                from_value = to_bin(axis, plots.to_display(axis, v))
+                from_label = plots.to_display_bin(axis, to_bin(axis, v))
+                assert np.allclose(from_value, from_label), (axis, sign)
+            finally:
+                plots.DISPLAY_SIGN[axis] = saved
 
 
 def test_cells3d_and_hexbin_agree_about_where_the_z_ridge_is():
@@ -482,12 +500,11 @@ def test_cells3d_and_hexbin_agree_about_where_the_z_ridge_is():
     n = 60000
     cal = pd.DataFrame({"x_cal": rng.normal(0, 6, n), "y_cal": rng.normal(0, 10, n),
                         "z_cal": rng.normal(0, 2.5, n)})
-    # Peak at STORED z = +1.0, deliberately NOT on a bin edge: a peak sitting on
-    # an edge gives the same label under both conventions and proves nothing.
-    # Correct: drawn value -1.0, which lives in the bin whose lower edge is -1.5.
+    # Peak at z = +1.0, deliberately NOT on a bin edge. It lives in the bin
+    # whose lower edge is +0.5, and the 3D path must agree with the raw value.
     v = np.exp(-((cal["z_cal"] - 1.0) ** 2) / 2.0)
     df = pd.DataFrame({"estimated_woba_using_speedangle": v})
     g = plots.cells3d(cal, df, "estimated_woba_using_speedangle", min_n=20)
     prof = g.groupby("bz").apply(lambda t: np.average(t["mean"], weights=t["n"]))
     peak = float(prof.idxmax())
-    assert peak == -1.5, f"the drawn peak landed at {peak}, expected -1.5"
+    assert peak == 0.5, f"the peak landed at {peak}, expected +0.5"

@@ -22,19 +22,21 @@ from .calibrate import BINS, to_bin  # noqa: E402
 AXIS_LABEL = {
     "x": "along the bat (in): tied up  |  centered  |  flail",
     "y": "timing (ms): late  |  on time  |  early",
-    # Every figure draws z as the BAT's height above the ball, so "over" is
-    # positive, which is the way round Jeremy reads it. Savant's stored field
-    # is the opposite sign: it is the BALL's height above the swing plane, and
-    # their own leaderboard publishes avg_z_over = -3.78, avg_z_under = +2.99.
-    # See DISPLAY_SIGN.
-    "z": "bat above the ball (in): under  |  lined up  |  over",
+    # Savant's own sign and ordering. The word "ball" is load-bearing: the
+    # NUMBER is the ball's height above the swing plane while the LABEL is what
+    # the bat did, and they point opposite ways. A ball above the plane means
+    # the bat passed under it, so "under" is the POSITIVE end. Savant's league
+    # page publishes avg_z_over = -3.78 and avg_z_under = +2.99, and getting
+    # under the ball is what lifts it: mean launch angle is +22 degrees at
+    # z = +0.75 and -6 degrees at z = -0.75.
+    "z": "ball above the swing plane (in): over  |  lined up  |  under",
 }
 
-# Applied at the drawing boundary only. Everything upstream -- reconstruction,
-# calibration, and every comparison against Savant -- stays on Savant's own
-# sign, so a tail row's raw delta never has to be negated to be checked. Both
-# thresholds are symmetric, so nothing else moves.
-DISPLAY_SIGN = {"x": 1.0, "y": 1.0, "z": -1.0}
+# Every axis is drawn on Savant's own sign, so a figure and a validation table
+# can never disagree. The machinery stays because the bin-mirroring rule in
+# to_display_bin is easy to get wrong and this is where it is written down;
+# flipping one entry to -1.0 is the whole change if an axis ever needs it.
+DISPLAY_SIGN = {"x": 1.0, "y": 1.0, "z": 1.0}
 
 
 def to_display(axis: str, values):
@@ -239,20 +241,30 @@ def _diverging_limits(vals, vcenter=0.0, weights=None, keep=1.0):
     return centre, centre - lim, centre + lim
 
 
-def _fade(values, weights=None, keep=0.98, floor=0.10, span=0.80):
-    """Alpha per cell: the ordinary fades out, the unusual stays.
+def _fade(values, keep=0.98, floor=0.03, span=0.97, power=1.8):
+    """Opacity and a 0-to-1 weight per cell, rising with the VALUE itself.
 
-    The anchor is NOT a parameter, deliberately. It is always the data's own
-    weighted centre, so no caller can hand it a fixed scale's white. Passing
-    xwOBA's white (0.600) instead of its league mean (0.370) made the good
-    ridge the faintest thing in the figure and the ordinary shell the most
-    opaque, which is this function's purpose exactly inverted.
+    Monotone, not symmetric about a centre. The reader is looking for where the
+    good contact is, so the best cells are opaque and full size and the worst
+    fade out of the way. An earlier version ramped on distance from the league
+    mean, which made the worst cells as loud as the best and buried the ridge
+    inside an opaque shell of ordinary blue.
+
+    Normalised on the data's own robust range rather than the fixed colour
+    scale, so the reddest cell PRESENT reaches full opacity even when the scale
+    leaves headroom above it (xwOBA tops out near 0.92 on a bar drawn to 1.2).
+    Colour stays comparable between figures; opacity is a within-figure aid.
     """
     v = np.asarray(values, float)
-    centre = float(np.average(v, weights=weights) if weights is not None else v.mean())
-    seen = float(np.quantile(np.abs(v - centre), keep)) or 0.1
-    dist = np.clip(np.abs(v - centre) / seen, 0.0, 1.0)
-    return floor + span * dist ** 1.1, centre
+    finite = v[np.isfinite(v)]
+    if finite.size == 0:
+        return np.full(v.shape, floor), np.zeros(v.shape)
+    edge = (1.0 - keep) / 2.0
+    lo, hi = np.quantile(finite, [edge, 1.0 - edge])
+    if hi <= lo:
+        lo, hi = float(finite.min()), float(finite.max())
+    u = np.clip((v - lo) / (hi - lo), 0.0, 1.0) if hi > lo else np.full(v.shape, 0.5)
+    return floor + span * u ** power, u
 
 
 def _scale_for(value, vals, vcenter=0.0, weights=None, keep=1.0):
@@ -394,21 +406,22 @@ def cloud3d(cal, df, out_png: Path, title: str,
     centre, lo, hi = _scale_for(value, g["mean"], vcenter, weights=g["n"], keep=keep)
     norm = TwoSlopeNorm(vcenter=centre, vmin=lo, vmax=hi)
     # Colour comes off the fixed scale so the figure is comparable across
-    # figures; opacity comes off the data, via _fade, which owns its own anchor.
-    alpha, data_centre = _fade(g["mean"], weights=g["n"], keep=keep)
+    # figures; opacity and size come off the data, rising with the value.
+    alpha, u = _fade(g["mean"], keep=keep)
     # Alpha is baked into the face colours rather than passed as `alpha=`. A 3D
     # collection re-pairs its alpha array against its EDGE colours too, and with
     # edgecolors="none" that is 551 alphas against 0 colours, which raises.
     rgba = CMAP(norm(g["mean"].to_numpy(float)))
     rgba[:, 3] = alpha
-    size = 8 + 42 * (g["n"] / g["n"].max()) ** 0.4
+    size = 4 + 56 * u ** 1.8
     views = ((22, -60), (22, 30), (60, -45), (8, -90))
     for i, (elev, azim) in enumerate(views, 1):
         ax = fig.add_subplot(2, 2, i, projection="3d")
         ax.scatter(g["bx"], g["by"], g["bz"], c=rgba, s=size, depthshade=False)
         ax.set_xlabel("x: along the bat (in)", fontsize=8, color=INK, labelpad=1)
         ax.set_ylabel("y: timing (ms)", fontsize=8, color=INK, labelpad=1)
-        ax.set_zlabel("z: bat above the ball (in)", fontsize=8, color=INK, labelpad=1)
+        ax.set_zlabel("z: ball above the plane (in), under is positive",
+                      fontsize=8, color=INK, labelpad=1)
         ax.tick_params(labelsize=7, colors=INK)
         ax.view_init(elev=elev, azim=azim)
         ax.set_title(f"elev {elev}, azim {azim}", fontsize=9, color=INK)
@@ -426,7 +439,7 @@ def cloud3d(cal, df, out_png: Path, title: str,
     fig.suptitle(f"{title}\n one marker per {BINS['x']:.0f} in x {BINS['y']:.0f} ms x "
                  f"{BINS['z']:.0f} in cell of Savant's grid: {len(g):,} cells of at least "
                  f"{min_n} swings.\nFixed scale {lo:g} to {hi:g}, white at {centre:g}; "
-                 f"opacity rises with distance from the league mean ({data_centre:.3f})",
+                 f"size and opacity rise with {value}",
                  fontsize=12, color=INK)
     out_png = Path(out_png)
     out_png.parent.mkdir(parents=True, exist_ok=True)
@@ -458,23 +471,35 @@ def cloud3d_html(cal, df, out_html: Path, title: str,
     # reach needs white placed at the fraction the centre actually sits at.
     mid = (centre - lo) / (hi - lo) if hi > lo else 0.5
     scale = [[0.0, POS], [round(float(mid), 6), MID], [1.0, NEG]]
-    size = 3 + 14 * (g["n"] / g["n"].max()) ** 0.4
+    # Same encoding as the static figure: size and opacity rise with the value.
+    # scatter3d takes only a SCALAR marker.opacity, so per-cell alpha has to be
+    # baked into rgba strings; that leaves the trace with no colour axis, so a
+    # second empty trace carries the colourbar.
+    alpha, u = _fade(g["mean"], keep=keep)
+    size = 2 + 16 * u ** 1.8
+    rgba = CMAP(TwoSlopeNorm(vcenter=centre, vmin=lo, vmax=hi)(g["mean"].to_numpy(float)))
+    fill = [f"rgba({int(r*255)},{int(gr*255)},{int(b*255)},{a:.3f})"
+            for (r, gr, b, _), a in zip(rgba, alpha)]
     hover = [f"x {bx:+.0f} in<br>y {by:+.0f} ms<br>z {bz:+.0f} in"
              f"<br>{value} {m:.3f}<br>{int(n):,} swings"
              for bx, by, bz, m, n in zip(g["bx"], g["by"], g["bz"], g["mean"], g["n"])]
     fig = go.Figure(go.Scatter3d(
         x=g["bx"], y=g["by"], z=g["bz"], mode="markers", text=hover, hoverinfo="text",
-        marker=dict(size=size, color=g["mean"], colorscale=scale,
-                    cmin=lo, cmax=hi, opacity=0.72,
-                    line=dict(width=0),
+        showlegend=False,
+        marker=dict(size=size, color=fill, line=dict(width=0))))
+    fig.add_trace(go.Scatter3d(
+        x=[None], y=[None], z=[None], mode="markers", hoverinfo="skip", showlegend=False,
+        marker=dict(size=0.1, color=[lo], colorscale=scale, cmin=lo, cmax=hi,
+                    showscale=True,
                     colorbar=dict(title=dict(text=value, side="right"), thickness=14))))
     fig.update_layout(
         title=dict(text=f"{title}<br><sub>one marker per {BINS['x']:.0f} in x "
                         f"{BINS['y']:.0f} ms x {BINS['z']:.0f} in cell of Savant's grid: "
-                        f"{len(g):,} cells of at least {min_n} swings. White at "
-                        f"{centre:.3f}; marker size is cell count</sub>"),
+                        f"{len(g):,} cells of at least {min_n} swings. Fixed scale "
+                        f"{lo:g} to {hi:g}, white at {centre:g}; size and opacity "
+                        f"rise with {value}</sub>"),
         scene=dict(xaxis_title="x: along the bat (in)", yaxis_title="y: timing (ms)",
-                   zaxis_title="z: bat above the ball (in)",
+                   zaxis_title="z: ball above the plane (in), under is positive",
                    aspectmode="cube"),
         paper_bgcolor="white", margin=dict(l=0, r=0, t=70, b=0), height=820)
     fig.write_html(out_html, include_plotlyjs=True, full_html=True)

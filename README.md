@@ -20,33 +20,35 @@ Every figure draws expected wOBA on one fixed scale, 0 to 1.2 with white at
 A scale fitted to each panel's own data makes a quiet panel and a violent one
 look alike, and nothing carries from one figure to the next.
 
-The z axis is drawn as the BAT's height above the ball, so "over" is positive.
-Savant stores the opposite sign, the ball's height above the swing plane: their
-2025 leaderboard publishes avg_z_over = -3.78 and avg_z_under = +2.99, and every
-one of their 11,476 per-swing rows labelled Over carries a negative value under
-both batter hands. The flip is applied when drawing only; every comparison
-against Savant stays on Savant's sign.
+Every axis is drawn on Savant's own sign. On z that means UNDER is positive,
+which reads backwards until you notice that the number and the label describe
+different objects: the number is the ball's height above the swing plane, and
+the label is what the bat did. A ball above the plane means the bat passed under
+it. Savant's 2025 leaderboard publishes avg_z_over = -3.78 and avg_z_under =
++2.99, and every one of their 11,476 per-swing rows labelled Over carries a
+negative value under both batter hands.
 
-x needs no such flip. Tied up is negative for all 1,826 of Savant's own tail
-rows under both hands, because it measures handle against tip along the bat and
-does not care which side of the plate the batter stands on.
+Tied up is negative for all 1,826 of Savant's own tail rows under both hands,
+because it measures handle against tip along the bat and does not care which
+side of the plate the batter stands on.
 
-On balls in play the best contact is made with the bat about three quarters of
-an inch UNDER the ball, not over it, and the gap is not close: one inch under is
-worth .584 in expected wOBA against .179 one inch over. Launch angle is the
-mechanism, and it runs monotonically through zero.
+The best contact on balls in play is made about three quarters of an inch UNDER
+the ball, not over it, and the gap is not close: one inch under is worth .584 in
+expected wOBA against .179 one inch over. Launch angle is the mechanism and it
+runs monotonically through zero.
 
-| bat vs ball | expected wOBA | launch angle | exit velocity |
-|---|---|---|---|
-| 1.25 in under | .392 | +32 deg | 90.0 |
-| 0.75 in under | .679 | +22 deg | 93.7 |
-| lined up | .553 | +8 deg | 94.7 |
-| 0.75 in over | .251 | -6 deg | 91.2 |
-| 1.25 in over | .119 | -17 deg | 85.8 |
+| z | | expected wOBA | launch angle | exit velocity |
+|---|---|---|---|---|
+| +1.25 | under | .392 | +32 deg | 90.0 |
+| +0.75 | under | .679 | +22 deg | 93.7 |
+| 0 | lined up | .553 | +8 deg | 94.7 |
+| -0.75 | over | .251 | -6 deg | 91.2 |
+| -1.25 | over | .119 | -17 deg | 85.8 |
 
-Slightly under puts the ball in the air at the angle that pays. Slightly over
-puts it in the ground. There is no symmetric counterpart because there is no
-ideal ground ball.
+Getting under the ball lifts it, which is why "under" carries a positive launch
+angle. Getting over it puts the ball in the ground. There is no symmetric
+counterpart because there is no ideal ground ball, and that asymmetry is the
+single largest feature of all three figures.
 
 Only one of the three z bands pays. A swing more than 2 inches off its own
 plane almost never puts the ball in play: 1.4% of "over" swings and 3.4% of
