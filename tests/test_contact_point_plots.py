@@ -274,17 +274,82 @@ def test_cloud3d_html_places_white_at_the_centre_of_an_asymmetric_range(tmp_path
     somewhere that is not the league mean, and the page disagrees with the PNG.
     """
     cal, df = _fake(n=20000, seed=8)
-    df["estimated_woba_using_speedangle"] = np.abs(
-        np.random.default_rng(9).normal(0.2, 0.3, len(df)))
+    # A deterministic function of x, so the skew survives averaging inside a
+    # cell. Drawing per row instead lets the cell means concentrate on the mean
+    # and the fixture's own guard below then refuses the test.
+    df["unscaled_metric"] = np.exp(-np.abs(cal["x_cal"]) / 1.0)
+    # keep is passed on both sides so the test pins the placement rule, not the
+    # current default.
     out = plots.cloud3d_html(cal, df, tmp_path / "c.html", "t",
-                             value="estimated_woba_using_speedangle", min_n=10)
-    g = plots.cells3d(cal, df, "estimated_woba_using_speedangle", 10)
-    centre, lo, hi = plots._diverging_limits(g["mean"], None, weights=g["n"], keep=0.99)
+                             value="unscaled_metric", min_n=10, keep=0.98)
+    g = plots.cells3d(cal, df, "unscaled_metric", 10)
+    centre, lo, hi = plots._diverging_limits(g["mean"], None, weights=g["n"], keep=0.98)
     want = (centre - lo) / (hi - lo)
     assert abs(want - 0.5) > 0.02, "fixture is symmetric, the test proves nothing"
-    m = re.search(r'\[\[0(?:\.0)?,\s*"' + re.escape(plots.NEG)
+    m = re.search(r'\[\[0(?:\.0)?,\s*"' + re.escape(plots.POS)
                   + r'"\],\s*\[([0-9.]+),\s*"' + re.escape(plots.MID) + r'"\]',
                   out.read_text(encoding="utf-8"))
     assert m, "could not find the diverging colorscale in the page"
     assert abs(float(m.group(1)) - want) < 1e-3, (
         f"white sits at {m.group(1)} of the range, the mean is at {want:.4f}")
+
+
+def test_diverging_limits_clips_a_signed_reach_at_the_keep_quantile():
+    """A few extreme cells must not wash out the rest.
+
+    Over all swings 91.8 percent of the run value cells sat inside a quarter of
+    max|v|, so the figure was a faint pink blur with one blue streak. Clipping
+    the reach at the keep quantile puts the median cell at 40 percent of the
+    bar instead of 14.
+    """
+    v = np.concatenate([np.full(99, 0.05), np.array([5.0])])
+    _, lo_max, hi_max = plots._diverging_limits(v, 0.0, keep=1.0)
+    _, lo_clip, hi_clip = plots._diverging_limits(v, 0.0, keep=0.90)
+    assert hi_max == 5.0, "keep=1.0 should still reach the extreme"
+    assert hi_clip < 0.2, f"the outlier still set the reach ({hi_clip})"
+    assert lo_clip == -hi_clip, "a signed quantity must stay symmetric"
+
+
+def test_the_colormap_runs_cold_to_hot():
+    """Savant's polarity: blue at the bottom of the scale, red at the top."""
+    lo = plots.CMAP(0.0)[:3]
+    hi = plots.CMAP(1.0)[:3]
+    assert lo[2] > lo[0], f"the low end is not blue: {lo}"
+    assert hi[0] > hi[2], f"the high end is not red: {hi}"
+
+
+def test_the_fixed_scales_are_the_ones_that_were_asked_for():
+    assert plots.SCALES["estimated_woba_using_speedangle"] == (0.0, 0.6, 1.2)
+    assert plots.SCALES["delta_run_exp"] == (-0.3, 0.0, 0.3)
+
+
+def test_a_fixed_scale_ignores_the_data_it_is_given():
+    """The point of a fixed scale is that two panels can be compared.
+
+    A scale fitted per panel makes a quiet panel and a violent one look alike.
+    """
+    quiet = np.array([0.55, 0.60, 0.65])
+    violent = np.array([0.01, 0.60, 1.19])
+    for vals in (quiet, violent):
+        centre, lo, hi = plots._scale_for("estimated_woba_using_speedangle", vals)
+        assert (lo, centre, hi) == (0.0, 0.6, 1.2)
+
+
+def test_an_unnamed_metric_still_gets_limits():
+    vals = np.array([-0.4, 0.0, 0.9])
+    centre, lo, hi = plots._scale_for("some_new_metric", vals, vcenter=0.0)
+    assert centre == 0.0 and lo == -hi and hi > 0
+
+
+def test_every_panel_of_a_hexbin_grid_shares_one_scale(tmp_path):
+    import matplotlib.pyplot as plt
+    cal, df = _fake(n=20000, seed=11)
+    norms = []
+    for pair in (("x", "y"), ("x", "z"), ("y", "z")):
+        fig, ax = plt.subplots()
+        plots.hexbin(cal, df, pair, "estimated_woba_using_speedangle",
+                     min_n=5, ax=ax, cbar=False)
+        hb = [c for c in ax.collections if hasattr(c, "get_offsets")][0]
+        norms.append((hb.norm.vmin, hb.norm.vcenter, hb.norm.vmax))
+        plt.close(fig)
+    assert norms[0] == norms[1] == norms[2] == (0.0, 0.6, 1.2), norms

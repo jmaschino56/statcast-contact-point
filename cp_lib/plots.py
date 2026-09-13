@@ -26,7 +26,18 @@ AXIS_LABEL = {
 }
 THRESH = {"x": 4.0, "y": 7.0, "z": 2.0}
 NEG, MID, POS = "#b2182b", "#efefee", "#2166ac"
-CMAP = LinearSegmentedColormap.from_list("rv", [NEG, MID, POS])
+# Savant's polarity: cold blue at the bottom of the scale, hot red at the top.
+CMAP = LinearSegmentedColormap.from_list("rv", [POS, MID, NEG])
+
+# One fixed scale per quantity, shared by every panel and every figure that
+# draws it. A per-panel scale fitted to its own data makes two panels look
+# alike when their cells are a quarter of a run apart, and the eye cannot
+# carry a reading from one figure to the next. Fixed limits cost some contrast
+# inside a single panel and buy comparability everywhere.
+SCALES = {
+    "delta_run_exp": (-0.3, 0.0, 0.3),
+    "estimated_woba_using_speedangle": (0.0, 0.6, 1.2),
+}
 GRID = "#d8d8d4"
 DPI = 140   # embedded in the notebook as base64; 200 dpi pushes the .ipynb past 16 MB
 INK = "#3d3d3a"
@@ -72,7 +83,7 @@ def heatmap(cal, df, axes=("x", "y"), value="delta_run_exp", min_n=50, title=Non
         ax.text(0.5, 0.5, "no cell reached the minimum count", ha="center", va="center",
                 transform=ax.transAxes, color=INK)
         return ax
-    centre, lo, hi = _diverging_limits(piv.to_numpy().ravel(), vcenter)
+    centre, lo, hi = _scale_for(value, piv.to_numpy().ravel(), vcenter)
     if vmax:
         lo, hi = centre - vmax, centre + vmax
     x_edges = np.append(piv.columns.to_numpy(float), piv.columns.max() + BINS[a])
@@ -184,8 +195,26 @@ def _diverging_limits(vals, vcenter=0.0, weights=None, keep=1.0):
                   else tuple(float(q) for q in np.quantile(vals, [edge, 1.0 - edge])))
         return centre, min(lo, centre - 1e-6), max(hi, centre + 1e-6)
     centre = float(vcenter)
-    lim = float(np.max(np.abs(vals - centre))) or 0.1
+    dev = np.abs(vals - centre)
+    # A robust reach, not the maximum. Over all swings 91.8 percent of the run
+    # value cells sit within a quarter of max|v - 0|, because a handful of
+    # extreme cells set the scale; clipping at the keep quantile puts the median
+    # cell at 40 percent of the bar instead of 14, and saturates the few.
+    lim = float(np.quantile(dev, keep) if keep < 1.0 else dev.max()) or 0.1
     return centre, centre - lim, centre + lim
+
+
+def _scale_for(value, vals, vcenter=0.0, weights=None, keep=1.0):
+    """The colour limits for `value`: its fixed scale when it has one.
+
+    Falls back to _diverging_limits for a quantity SCALES does not name, so a
+    new metric still draws something sensible instead of raising.
+    """
+    fixed = SCALES.get(value)
+    if fixed is not None:
+        lo, centre, hi = (float(f) for f in fixed)
+        return centre, lo, hi
+    return _diverging_limits(vals, vcenter, weights=weights, keep=keep)
 
 
 def _bulk_extent(v: np.ndarray, axis: str, keep=0.998):
@@ -237,7 +266,7 @@ def hexbin(cal, df, axes=("x", "y"), value="delta_run_exp", min_n=50, title=None
     vals = hb.get_array()
     vals = np.asarray(vals[np.isfinite(vals)], float)
     if vals.size:
-        centre, lo, hi = _diverging_limits(vals, vcenter)
+        centre, lo, hi = _scale_for(value, vals, vcenter)
         if vmax:
             lo, hi = centre - vmax, centre + vmax
         hb.set_norm(TwoSlopeNorm(vcenter=centre, vmin=lo, vmax=hi))
@@ -292,7 +321,7 @@ def cells3d(cal, df, value="estimated_woba_using_speedangle", min_n=25):
 
 
 def cloud3d(cal, df, out_png: Path, title: str,
-            value="estimated_woba_using_speedangle", min_n=25, keep=0.99,
+            value="estimated_woba_using_speedangle", min_n=25, keep=0.98,
             vcenter=None) -> Path:
     """The three axes at once, one marker per cell, coloured by `value`.
 
@@ -311,15 +340,18 @@ def cloud3d(cal, df, out_png: Path, title: str,
         fig.savefig(out_png, dpi=DPI, facecolor="white")
         plt.close(fig)
         return Path(out_png)
-    centre, lo, hi = _diverging_limits(g["mean"], vcenter, weights=g["n"], keep=keep)
+    centre, lo, hi = _scale_for(value, g["mean"], vcenter, weights=g["n"], keep=keep)
     norm = TwoSlopeNorm(vcenter=centre, vmin=lo, vmax=hi)
-    reach = max(centre - lo, hi - centre)
-    dist = np.clip(np.abs(g["mean"] - centre) / reach, 0, 1)
+    # Colour comes off the fixed scale so the figure is comparable; opacity is
+    # fitted to the spread actually present, or a fixed scale wider than the
+    # data would fade every marker at once.
+    seen = float(np.quantile(np.abs(g["mean"] - centre), keep)) or 0.1
+    dist = np.clip(np.abs(g["mean"] - centre) / seen, 0, 1)
     # Alpha is baked into the face colours rather than passed as `alpha=`. A 3D
     # collection re-pairs its alpha array against its EDGE colours too, and with
     # edgecolors="none" that is 551 alphas against 0 colours, which raises.
     rgba = CMAP(norm(g["mean"].to_numpy(float)))
-    rgba[:, 3] = 0.06 + 0.84 * dist ** 1.5
+    rgba[:, 3] = 0.10 + 0.80 * dist ** 1.1
     size = 8 + 42 * (g["n"] / g["n"].max()) ** 0.4
     views = ((22, -60), (22, 30), (60, -45), (8, -90))
     for i, (elev, azim) in enumerate(views, 1):
@@ -342,8 +374,10 @@ def cloud3d(cal, df, out_png: Path, title: str,
     cb = fig.colorbar(sm, ax=fig.axes, shrink=0.5, pad=0.02, fraction=0.03)
     cb.set_label(value, fontsize=9, color=INK)
     cb.ax.tick_params(labelsize=8, colors=INK)
-    fig.suptitle(f"{title}\n{len(g):,} cells of at least {min_n} swings, "
-                 f"white at {centre:.3f}, opacity rises with distance from it",
+    fig.suptitle(f"{title}\n one marker per {BINS['x']:.0f} in x {BINS['y']:.0f} ms x "
+                 f"{BINS['z']:.0f} in cell of Savant's grid: {len(g):,} cells of at least "
+                 f"{min_n} swings.\nFixed scale {lo:g} to {hi:g}, white at {centre:g}; "
+                 f"opacity rises with distance from white",
                  fontsize=12, color=INK)
     out_png = Path(out_png)
     out_png.parent.mkdir(parents=True, exist_ok=True)
@@ -353,7 +387,7 @@ def cloud3d(cal, df, out_png: Path, title: str,
 
 
 def cloud3d_html(cal, df, out_html: Path, title: str,
-                 value="estimated_woba_using_speedangle", min_n=25, keep=0.99,
+                 value="estimated_woba_using_speedangle", min_n=25, keep=0.98,
                  vcenter=None) -> Path:
     """The same cells as cloud3d, rotatable, as one self-contained HTML file.
 
@@ -370,11 +404,11 @@ def cloud3d_html(cal, df, out_html: Path, title: str,
     if g.empty:
         out_html.write_text("<p>no cell reached the minimum count</p>", encoding="utf-8")
         return out_html
-    centre, lo, hi = _diverging_limits(g["mean"], vcenter, weights=g["n"], keep=keep)
+    centre, lo, hi = _scale_for(value, g["mean"], vcenter, weights=g["n"], keep=keep)
     # plotly spaces a colorscale evenly over [cmin, cmax], so an asymmetric
     # reach needs white placed at the fraction the centre actually sits at.
     mid = (centre - lo) / (hi - lo) if hi > lo else 0.5
-    scale = [[0.0, NEG], [round(float(mid), 6), MID], [1.0, POS]]
+    scale = [[0.0, POS], [round(float(mid), 6), MID], [1.0, NEG]]
     size = 3 + 14 * (g["n"] / g["n"].max()) ** 0.4
     hover = [f"x {bx:+.0f} in<br>y {by:+.0f} ms<br>z {bz:+.0f} in"
              f"<br>{value} {m:.3f}<br>{int(n):,} swings"
@@ -386,9 +420,10 @@ def cloud3d_html(cal, df, out_html: Path, title: str,
                     line=dict(width=0),
                     colorbar=dict(title=dict(text=value, side="right"), thickness=14))))
     fig.update_layout(
-        title=dict(text=f"{title}<br><sub>{len(g):,} cells of at least {min_n} swings, "
-                        f"white at the league mean {centre:.3f}, marker size is cell count"
-                        "</sub>"),
+        title=dict(text=f"{title}<br><sub>one marker per {BINS['x']:.0f} in x "
+                        f"{BINS['y']:.0f} ms x {BINS['z']:.0f} in cell of Savant's grid: "
+                        f"{len(g):,} cells of at least {min_n} swings. White at "
+                        f"{centre:.3f}; marker size is cell count</sub>"),
         scene=dict(xaxis_title="x: along the bat (in)", yaxis_title="y: timing (ms)",
                    zaxis_title="z: above the plane (in)",
                    aspectmode="cube"),

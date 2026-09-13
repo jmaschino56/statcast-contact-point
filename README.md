@@ -15,6 +15,11 @@ what happened to the pitch.
 
 ![run value over the contact point](figures/hexbin_runvalue_all_swings.png)
 
+Every figure draws expected wOBA on one fixed scale, 0 to 1.2 with white at
+0.600, and run value on -0.3 to 0.3 with white at zero, blue cold and red hot.
+A scale fitted to each panel's own data makes a quiet panel and a violent one
+look alike, and nothing carries from one figure to the next.
+
 Only one of the three z bands pays. A swing more than 2 inches off its own
 plane almost never puts the ball in play: 1.4% of "over" swings and 3.4% of
 "under" ones do, against 59% of lined-up swings. Run value per swing follows,
