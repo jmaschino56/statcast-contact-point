@@ -38,8 +38,27 @@ DISPLAY_SIGN = {"x": 1.0, "y": 1.0, "z": -1.0}
 
 
 def to_display(axis: str, values):
-    """Savant's stored sign turned into the sign the figures are drawn in."""
+    """Savant's stored sign turned into the sign the figures are drawn in.
+
+    For raw VALUES only. A bin LABEL is its lower edge, and negating a lower
+    edge gives an upper edge, which lands the bin a full width away from the
+    value it is supposed to hold. Bin a displayed value, or use to_display_bin.
+    """
     return np.asarray(values, float) * DISPLAY_SIGN[axis]
+
+
+def to_display_bin(axis: str, lower_edges):
+    """Flip a bin named by its LOWER EDGE, keeping the bin over its own data.
+
+    Bin [lo, lo+w) mirrors to (-lo-w, -lo], whose lower edge is -lo-w. Dropping
+    the width shifted every z cell one whole inch, which put the peak of the
+    xwOBA ridge in the wrong bin and made the 3D figures disagree with the
+    hexbins, which flip the value and never had the bug.
+    """
+    lo = np.asarray(lower_edges, float)
+    if DISPLAY_SIGN[axis] > 0:
+        return lo
+    return -lo - BINS[axis]
 THRESH = {"x": 4.0, "y": 7.0, "z": 2.0}
 NEG, MID, POS = "#b2182b", "#efefee", "#2166ac"
 # Savant's polarity: cold blue at the bottom of the scale, hot red at the top.
@@ -71,8 +90,8 @@ def _dress(ax):
 
 def _grid(cal, df, axes, value, min_n):
     a, b = axes
-    t = pd.DataFrame({"ba": to_display(a, to_bin(a, cal[f"{a}_cal"].to_numpy(float))),
-                      "bb": to_display(b, to_bin(b, cal[f"{b}_cal"].to_numpy(float))),
+    t = pd.DataFrame({"ba": to_bin(a, to_display(a, cal[f"{a}_cal"].to_numpy(float))),
+                      "bb": to_bin(b, to_display(b, cal[f"{b}_cal"].to_numpy(float))),
                       "v": df[value].to_numpy(float)}).dropna()
     if t.empty:
         return pd.DataFrame()
@@ -341,9 +360,9 @@ def cells3d(cal, df, value="estimated_woba_using_speedangle", min_n=25):
     to draw it. Shared by the static figure and the interactive one, which is
     the point: two views of one table cannot disagree.
     """
-    t = pd.DataFrame({"bx": to_display("x", to_bin("x", cal["x_cal"].to_numpy(float))),
-                      "by": to_display("y", to_bin("y", cal["y_cal"].to_numpy(float))),
-                      "bz": to_display("z", to_bin("z", cal["z_cal"].to_numpy(float))),
+    t = pd.DataFrame({"bx": to_bin("x", to_display("x", cal["x_cal"].to_numpy(float))),
+                      "by": to_bin("y", to_display("y", cal["y_cal"].to_numpy(float))),
+                      "bz": to_bin("z", to_display("z", cal["z_cal"].to_numpy(float))),
                       "v": df[value].to_numpy(float)}).dropna()
     if t.empty:
         return pd.DataFrame(columns=["bx", "by", "bz", "mean", "n"])
@@ -501,7 +520,7 @@ def league_bins_figure(table: pd.DataFrame, out_png: Path, min_n=100) -> Path:
     fig, axs = plt.subplots(2, 3, figsize=(20, 9), sharex="col")
     for col, axis in enumerate(("x", "y", "z")):
         t = table[table.axis == axis].copy()
-        t["bin"] = to_display(axis, t["bin"].to_numpy(float))
+        t["bin"] = to_display_bin(axis, t["bin"].to_numpy(float))
         t = t.sort_values("bin")
         w = BINS[axis]
         top, bot = axs[0][col], axs[1][col]

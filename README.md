@@ -31,6 +31,23 @@ x needs no such flip. Tied up is negative for all 1,826 of Savant's own tail
 rows under both hands, because it measures handle against tip along the bat and
 does not care which side of the plate the batter stands on.
 
+On balls in play the best contact is made with the bat about three quarters of
+an inch UNDER the ball, not over it, and the gap is not close: one inch under is
+worth .584 in expected wOBA against .179 one inch over. Launch angle is the
+mechanism, and it runs monotonically through zero.
+
+| bat vs ball | expected wOBA | launch angle | exit velocity |
+|---|---|---|---|
+| 1.25 in under | .392 | +32 deg | 90.0 |
+| 0.75 in under | .679 | +22 deg | 93.7 |
+| lined up | .553 | +8 deg | 94.7 |
+| 0.75 in over | .251 | -6 deg | 91.2 |
+| 1.25 in over | .119 | -17 deg | 85.8 |
+
+Slightly under puts the ball in the air at the angle that pays. Slightly over
+puts it in the ground. There is no symmetric counterpart because there is no
+ideal ground ball.
+
 Only one of the three z bands pays. A swing more than 2 inches off its own
 plane almost never puts the ball in play: 1.4% of "over" swings and 3.4% of
 "under" ones do, against 59% of lined-up swings. Run value per swing follows,

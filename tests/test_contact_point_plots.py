@@ -445,3 +445,49 @@ def test_cells3d_z_is_drawn_on_the_flipped_sign():
     # the decisive half: no drawn bz equals a stored bz of the same nonzero value
     # unless its negation is also present
     assert all((-b) in stored for b in g["bz"])
+
+
+def test_a_flipped_bin_still_contains_its_own_value():
+    """Negating a bin LABEL is not the same as negating its data.
+
+    to_bin names a bin by its LOWER EDGE, so [lo, lo+w) mirrors to a bin whose
+    lower edge is -lo-w. Dropping the width shifted every z cell one whole inch
+    and moved the peak of the xwOBA ridge into the wrong bin, while the hexbins,
+    which flip the value, showed it correctly. The two disagreed by a bin.
+    """
+    from cp_lib.calibrate import to_bin, BINS
+    rng = np.random.default_rng(5)
+    for axis in ("x", "y", "z"):
+        v = rng.normal(0, 5, 4000)
+        drawn = plots.to_display(axis, v)
+        label = to_bin(axis, drawn)
+        w = BINS[axis]
+        assert np.all(label <= drawn + 1e-9), axis
+        assert np.all(drawn < label + w + 1e-9), axis
+
+
+def test_to_display_bin_agrees_with_binning_the_flipped_value():
+    from cp_lib.calibrate import to_bin
+    rng = np.random.default_rng(6)
+    for axis in ("x", "y", "z"):
+        v = rng.normal(0, 5, 4000)
+        from_value = to_bin(axis, plots.to_display(axis, v))
+        from_label = plots.to_display_bin(axis, to_bin(axis, v))
+        assert np.allclose(from_value, from_label), axis
+
+
+def test_cells3d_and_hexbin_agree_about_where_the_z_ridge_is():
+    """The 3D path bins, the hexbin path does not. They must not disagree."""
+    rng = np.random.default_rng(7)
+    n = 60000
+    cal = pd.DataFrame({"x_cal": rng.normal(0, 6, n), "y_cal": rng.normal(0, 10, n),
+                        "z_cal": rng.normal(0, 2.5, n)})
+    # Peak at STORED z = +1.0, deliberately NOT on a bin edge: a peak sitting on
+    # an edge gives the same label under both conventions and proves nothing.
+    # Correct: drawn value -1.0, which lives in the bin whose lower edge is -1.5.
+    v = np.exp(-((cal["z_cal"] - 1.0) ** 2) / 2.0)
+    df = pd.DataFrame({"estimated_woba_using_speedangle": v})
+    g = plots.cells3d(cal, df, "estimated_woba_using_speedangle", min_n=20)
+    prof = g.groupby("bz").apply(lambda t: np.average(t["mean"], weights=t["n"]))
+    peak = float(prof.idxmax())
+    assert peak == -1.5, f"the drawn peak landed at {peak}, expected -1.5"
