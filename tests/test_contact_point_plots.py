@@ -562,45 +562,118 @@ def test_the_full_bat_profile_goes_only_where_x_is_an_axis():
     assert counts[("y", "z")] == 0, "a bat profile was drawn along milliseconds"
 
 
-def test_the_timing_panel_shows_the_barrel_edge_on():
-    """Neither axis runs along the bat there, but z is still inches.
+def test_the_shipped_timing_panel_carries_no_bat_furniture():
+    """Neither of its axes runs along the bat, so the bat came off it.
 
-    So what the panel can honestly carry is the barrel's 2.6 in depth, which
-    does not vary with timing, plus the same 2.75 in reach lines.
+    It is the panel where the silhouette taught the least and cost the most
+    room, and every line it still draws has to be a Savant threshold.
     """
     import matplotlib.pyplot as plt
     cal, df = _fake(n=20000, seed=46)
-    fig, ax = plt.subplots()
-    plots.hexbin(cal, df, ("y", "z"), "delta_run_exp", min_n=5, ax=ax, cbar=False)
-    flat = _flat_lines(ax)
+    a, b, equal, bat = [p for p in plots.PANELS if p[:2] == ("y", "z")][0]
+    assert bat is False, "the shipped y/z panel asked for a bat"
+    fig, ax = _panel(cal, df, (a, b), equal, bat)
     reach = plots.BAT_R + plots.BALL_R
+    flat = _flat_lines(ax)
+    for gone in (plots.BAT_R, -plots.BAT_R, reach, -reach):
+        assert round(gone, 4) not in flat, (gone, flat)
+    assert _bat_lines(ax) == []
+    assert flat == {round(-plots.THRESH["z"], 4), round(plots.THRESH["z"], 4)}, flat
+    plt.close(fig)
+
+
+def _panel(cal, df, pair, equal, bat=True):
+    """One panel built exactly the way hexbin_grid builds it."""
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(figsize=(9, 5))
+    plots.hexbin(cal, df, pair, "delta_run_exp", min_n=5, ax=ax, cbar=False,
+                 equal=equal, bat=bat)
+    return fig, ax
+
+
+def _legend_labels(ax):
+    leg = ax.get_legend()
+    return [t.get_text() for t in leg.get_texts()] if leg else []
+
+
+def test_the_shipped_panels_are_the_ones_the_tests_check():
+    assert plots.PANELS == (("x", "z", True, True), ("x", "y", False, True),
+                            ("y", "z", False, False))
+
+
+def test_only_the_x_z_panel_holds_its_two_axes_to_one_scale():
+    """Both of its axes are inches. No other pair can share a scale."""
+    import matplotlib.pyplot as plt
+    cal, df = _fake(n=20000, seed=44)
+    for a, b, equal, bat in plots.PANELS:
+        fig, ax = _panel(cal, df, (a, b), equal, bat)
+        locked = ax.get_aspect() == 1.0
+        assert locked == equal, (a, b, equal, ax.get_aspect())
+        if locked:
+            assert (a, b) == ("x", "z"), (a, b)
+        plt.close(fig)
+
+
+def test_on_the_one_scale_panel_the_bat_is_a_real_34_by_2_6_inch_shape():
+    """This is the panel where the silhouette IS the barrel.
+
+    Drawn isotropically instead it came out 0.28 in thick on the z axis, which
+    is what made it look wrong against the 2.75 in reach lines.
+    """
+    import matplotlib.pyplot as plt
+    cal, df = _fake(n=20000, seed=44)
+    fig, ax = _panel(cal, df, ("x", "z"), True)
+    line = _bat_lines(ax)[0]
+    assert line.get_transform() == ax.transData, "the bat is not in data units"
+    y = np.asarray(line.get_ydata(), float)
+    x = np.asarray(line.get_xdata(), float)
+    assert abs(y.max() - plots.BAT_R) < 1e-3, (y.max(), plots.BAT_R)
+    assert abs((x.max() - x.min()) - plots.BAT_LENGTH) < 1e-9
+    plt.close(fig)
+
+
+def test_the_barrel_is_drawn_once():
+    """Its own outline is the barrel on the one-scale panel.
+
+    A separate pair of barrel lines there would double the edge; the other z
+    panel has no outline, so it needs them.
+    """
+    import matplotlib.pyplot as plt
+    cal, df = _fake(n=20000, seed=44)
+    reach = plots.BAT_R + plots.BALL_R
+    fig, ax = _panel(cal, df, ("x", "z"), True)
+    flat = _flat_lines(ax)
+    assert round(plots.BAT_R, 4) not in flat, "barrel drawn twice on the bat panel"
+    assert round(reach, 4) in flat and round(-reach, 4) in flat, flat
+    plt.close(fig)
+
+    # The shipped figure no longer asks for this, but a caller that does still
+    # gets a barrel edge-on rather than a silhouette in milliseconds.
+    fig, ax = _panel(cal, df, ("y", "z"), False, bat=True)
+    flat = _flat_lines(ax)
     for want in (plots.BAT_R, -plots.BAT_R, reach, -reach):
         assert round(want, 4) in flat, (want, flat)
     plt.close(fig)
 
-
-def test_on_the_x_z_panel_the_bat_is_true_inches_on_both_axes():
-    """Both axes are inches there, so the barrel is drawn at its real radius.
-
-    That is what makes the outline mean something: a ball touches the barrel
-    while its centre is within BAT_R + BALL_R of the bat's axis, and 98.5
-    percent of balls in play fall inside that against 53.9 percent of whiffs.
-    """
-    import matplotlib.pyplot as plt
-    cal, df = _fake(n=20000, seed=44)
-    fig, ax = plt.subplots()
-    plots.hexbin(cal, df, ("x", "z"), "delta_run_exp", min_n=5, ax=ax, cbar=False)
-    line = _bat_lines(ax)[0]
-    assert line.get_transform() == ax.transData, "the bat is not in data units"
-    y = np.asarray(line.get_ydata(), float)
-    # 1e-3, not 1e-9: the outline is 600 interpolated points and need not land
-    # exactly on the profile's peak. Any RESCALING moves it far more than this.
-    assert abs(y.max() - plots.BAT_R) < 1e-3, (y.max(), plots.BAT_R)
-    assert abs(y.min() + plots.BAT_R) < 1e-3, (y.min(), -plots.BAT_R)
-    reach = plots.BAT_R + plots.BALL_R
-    flat = _flat_lines(ax)
-    assert round(reach, 4) in flat and round(-reach, 4) in flat, (reach, flat)
+    fig, ax = _panel(cal, df, ("x", "y"), False)
+    assert round(plots.BAT_R, 4) not in _flat_lines(ax), "a barrel depth in milliseconds"
     plt.close(fig)
+
+
+def test_the_silhouette_is_isotropic_wherever_the_axes_cannot_share_a_scale():
+    """There the other axis is milliseconds, so the thickness is drawing, not
+    data, and it is sized to look right rather than to mean something."""
+    import matplotlib.pyplot as plt
+    cal, df = _fake(n=20000, seed=49)
+    for a, b, equal, bat in plots.PANELS:
+        if equal or a != "x":
+            continue
+        fig, ax = _panel(cal, df, (a, b), equal, bat)
+        line = _bat_lines(ax)[0]
+        assert line.get_transform() != ax.transData, (a, b)
+        y = np.asarray(line.get_ydata(), float)
+        assert 0.0 <= y.min() and y.max() <= 1.0, (a, b, y.min(), y.max())
+        plt.close(fig)
 
 
 def test_on_the_x_y_panel_the_bat_height_is_not_in_data_units():
@@ -614,22 +687,6 @@ def test_on_the_x_y_panel_the_bat_height_is_not_in_data_units():
     y = np.asarray(line.get_ydata(), float)
     assert 0.0 <= y.min() and y.max() <= 1.0, "not an axes fraction"
     assert y.max() - y.min() < 2.2 * plots.BAT_FRAC_HALF + 1e-9
-    plt.close(fig)
-
-
-def test_the_x_z_panel_is_held_to_equal_aspect():
-    """Without it the vertical stretches about 2.75x and the bat reads stubby."""
-    import matplotlib.pyplot as plt
-    cal, df = _fake(n=20000, seed=47)
-    fig, ax = plt.subplots()
-    plots.hexbin(cal, df, ("x", "z"), "delta_run_exp", min_n=5, ax=ax, cbar=False,
-                 equal=True)
-    assert ax.get_aspect() == 1.0, ax.get_aspect()
-    plt.close(fig)
-
-    fig, ax = plt.subplots()
-    plots.hexbin(cal, df, ("x", "y"), "delta_run_exp", min_n=5, ax=ax, cbar=False)
-    assert ax.get_aspect() != 1.0, "milliseconds were locked to inches"
     plt.close(fig)
 
 
@@ -655,3 +712,109 @@ def test_the_timing_panel_bat_is_drawn_isotropic():
     assert abs(length_in / thick_in - plots.BAT_LENGTH / (2 * plots.BAT_R)) < 0.6, (
         length_in / thick_in, plots.BAT_LENGTH / (2 * plots.BAT_R))
     plt.close(fig)
+
+
+def test_every_quantity_gets_one_range_across_the_whole_figure():
+    """x, y and z each appear on two panels and must look identical on both.
+
+    The range is computed once from the whole column and handed to each panel,
+    rather than recomputed per panel: the per-panel finite masks differ, so two
+    panels drawing the same column came out 53.4 and 53.5 in wide.
+    """
+    import matplotlib.pyplot as plt
+    cal, df = _fake(n=20000, seed=50)
+    # DIFFERENT columns go missing, which is what makes the per-panel finite
+    # masks differ and the recomputed extents drift. With a fixture that has no
+    # NaN at all the masks are identical and this test cannot fail.
+    rng = np.random.default_rng(52)
+    for axis, frac in (("y", 0.25), ("z", 0.30)):
+        idx = rng.choice(len(cal), int(frac * len(cal)), replace=False)
+        cal.loc[cal.index[idx], f"{axis}_cal"] = np.nan
+    limits = {}
+    for axis in ("x", "y", "z"):
+        v = cal[f"{axis}_cal"].to_numpy(float)
+        limits[axis] = plots._bulk_extent(v[np.isfinite(v)], axis)
+    seen = {}
+    fig, axs = plt.subplots(1, 3)
+    for ax, pair in zip(axs, (("x", "z"), ("x", "y"), ("y", "z"))):
+        plots.hexbin(cal, df, pair, "delta_run_exp", min_n=5, ax=ax, cbar=False,
+                     limits=limits)
+        for q, rng in zip(pair, (ax.get_xlim(), ax.get_ylim())):
+            seen.setdefault(q, []).append(tuple(round(float(r), 6) for r in rng))
+    plt.close(fig)
+    for q, ranges in seen.items():
+        assert len(ranges) == 2, (q, ranges)
+        assert len(set(ranges)) == 1, f"{q} differs between panels: {ranges}"
+
+
+def test_hexbin_grid_writes_a_png_with_the_bat_layout(tmp_path):
+    cal, df = _fake(n=20000, seed=51)
+    out = plots.hexbin_grid(cal, df, "delta_run_exp", tmp_path / "g.png", "t", min_n=5)
+    assert out.exists() and out.stat().st_size > 20_000
+
+
+def _rules(ax):
+    """Every straight reference line on the panel, as the number it sits at.
+
+    An axvline is two points with one x; an axhline two points with one y. The
+    bat profile is 1200 points, so it never lands here.
+    """
+    out = set()
+    for l in ax.lines:
+        x = np.asarray(l.get_xdata(), float)
+        y = np.asarray(l.get_ydata(), float)
+        if x.size != 2:
+            continue
+        if x[0] == x[1]:
+            out.add(round(abs(float(x[0])), 4))
+        elif y[0] == y[1]:
+            out.add(round(abs(float(y[0])), 4))
+    return out
+
+
+def _legend_numbers(ax):
+    import re
+    return {round(float(v), 4)
+            for t in _legend_labels(ax)
+            for v in re.findall(r"\d+(?:\.\d+)?", t)}
+
+
+def test_every_reference_line_on_a_panel_is_named_with_its_number():
+    """Three kinds of dashed line shared one free-text caption, and the reader
+    had no way to tell a Savant threshold from the barrel's reach.
+
+    This is the invariant, not a fixture measurement: whatever rules a panel
+    draws, each one's value has to appear in that panel's own legend.
+    """
+    import matplotlib.pyplot as plt
+    cal, df = _fake(n=20000, seed=51)
+    for a, b, equal, bat in plots.PANELS:
+        fig, ax = _panel(cal, df, (a, b), equal, bat)
+        drawn, named = _rules(ax), _legend_numbers(ax)
+        assert drawn, (a, b)
+        assert drawn <= named, (a, b, sorted(drawn - named))
+        plt.close(fig)
+
+
+def test_the_legend_names_the_bat_exactly_when_the_panel_draws_one():
+    import matplotlib.pyplot as plt
+    cal, df = _fake(n=20000, seed=52)
+    for a, b, equal, bat in plots.PANELS:
+        fig, ax = _panel(cal, df, (a, b), equal, bat)
+        said = [t for t in _legend_labels(ax) if t.startswith("bat,")]
+        assert len(said) == (1 if bat and a == "x" else 0), (a, b, said)
+        assert len(said) == len(_bat_lines(ax)) // 2, (a, b, said)
+        plt.close(fig)
+
+
+def test_each_savant_threshold_is_named_with_the_word_savant_uses():
+    """A number alone does not tell the reader what the band is called."""
+    import matplotlib.pyplot as plt
+    cal, df = _fake(n=20000, seed=53)
+    for a, b, equal, bat in plots.PANELS:
+        fig, ax = _panel(cal, df, (a, b), equal, bat)
+        text = " | ".join(_legend_labels(ax))
+        for axis in (a, b):
+            assert plots.MID_NAME[axis] in text, (a, b, axis, text)
+            assert f"{plots.THRESH[axis]:g} {plots.AXIS_UNIT[axis]}" in text, (axis, text)
+        plt.close(fig)
